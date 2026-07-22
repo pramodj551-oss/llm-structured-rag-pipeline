@@ -33,7 +33,7 @@ A synthetic malformed fixture with an invalid `urgency` value (`SUPER_URGENT`) w
 }
 ```
 
-**Result:** Pydantic raised a `ValidationError` on the `urgency` field, since `SUPER_URGENT` falls outside the allowed enum values (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`). The ticket was rejected before entering the pipeline, confirming schema enforcement works as intended.
+**Result:** Pydantic raised a `ValidationError` on the `urgency` field, since `SUPER_URGENT` falls outside the allowed enum values (`Low`, `Medium`, `High`, `Critical`). The ticket was rejected before entering the pipeline, confirming schema enforcement works as intended.
 
 ---
 
