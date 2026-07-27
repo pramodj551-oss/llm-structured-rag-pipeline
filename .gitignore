@@ -1,0 +1,28 @@
+# Environment & Secret Keys 
+.env
+.env.local
+.env.production
+config.json
+secrets.py
+
+# Python & Virtual Env
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Node.js / React Frontend 
+node_modules/
+dist/
+build/
+.next/
+
+# Logs & Databases
+*.log
+*.sqlite3
+*.db
+
+# OS / Editor Files
+.DS_Store
+.vscode/
+.idea/
