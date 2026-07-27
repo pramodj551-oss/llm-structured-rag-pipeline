@@ -59,8 +59,6 @@ llm-structured-rag-pipeline/
 │   └── rag_pipeline.py           # Chunking, embedding, vector DB & Q&A
 ├── notebooks/
 │   └── demo_notebook.ipynb       # Visual transcript and query runs
-├── results/
-│   └── extracted_tickets.json    # Validated extraction results
 ├── requirements.txt               # Dependencies
 └── README.md                      # Tool choices, error handling, demo transcript
 ```
