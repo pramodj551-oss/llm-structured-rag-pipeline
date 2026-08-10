@@ -1,1 +1,366 @@
-{"cells":[{"cell_type":"code","source":["# Install chromadb if not already installed\n","!pip install chromadb\n","!pip install sentence-transformers\n","!pip install google-generativeai\n","\n","import os\n","import chromadb\n","from sentence_transformers import SentenceTransformer\n","import google.generativeai as genai # Corrected import statement"],"metadata":{"colab":{"base_uri":"https://localhost:8080/"},"id":"X36stOv70Qcf","executionInfo":{"status":"ok","timestamp":1784944342936,"user_tz":-330,"elapsed":48223,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}},"outputId":"b70b9ba9-92a5-48ee-a106-050954fc0e3b"},"execution_count":1,"outputs":[{"output_type":"stream","name":"stdout","text":["Collecting chromadb\n","  Downloading chromadb-1.5.9-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.0 kB)\n","Collecting build>=1.0.3 (from chromadb)\n","  Downloading build-1.5.0-py3-none-any.whl.metadata (5.7 kB)\n","Requirement already satisfied: pydantic>=2.0 in /usr/local/lib/python3.12/dist-packages (from chromadb) (2.13.4)\n","Collecting pydantic-settings>=2.0 (from chromadb)\n","  Downloading pydantic_settings-2.14.2-py3-none-any.whl.metadata (3.4 kB)\n","Collecting pybase64>=1.4.1 (from chromadb)\n","  Downloading pybase64-1.4.3-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl.metadata (8.7 kB)\n","Requirement already satisfied: uvicorn>=0.18.3 in /usr/local/lib/python3.12/dist-packages (from uvicorn[standard]>=0.18.3->chromadb) (0.51.0)\n","Requirement already satisfied: numpy>=1.22.5 in /usr/local/lib/python3.12/dist-packages (from chromadb) (2.0.2)\n","Requirement already satisfied: typing-extensions>=4.5.0 in /usr/local/lib/python3.12/dist-packages (from chromadb) (4.16.0)\n","Collecting onnxruntime>=1.14.1 (from chromadb)\n","  Downloading onnxruntime-1.28.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (5.5 kB)\n","Requirement already satisfied: opentelemetry-api>=1.2.0 in /usr/local/lib/python3.12/dist-packages (from chromadb) (1.42.1)\n","Collecting opentelemetry-exporter-otlp-proto-grpc>=1.2.0 (from chromadb)\n","  Downloading opentelemetry_exporter_otlp_proto_grpc-1.44.0-py3-none-any.whl.metadata (2.6 kB)\n","Requirement already satisfied: opentelemetry-sdk>=1.2.0 in /usr/local/lib/python3.12/dist-packages (from chromadb) (1.42.1)\n","Requirement already satisfied: tokenizers>=0.13.2 in /usr/local/lib/python3.12/dist-packages (from chromadb) (0.22.2)\n","Collecting pypika>=0.48.9 (from chromadb)\n","  Downloading pypika-0.51.1-py2.py3-none-any.whl.metadata (51 kB)\n","\u001b[2K     \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m52.0/52.0 kB\u001b[0m \u001b[31m1.9 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n","\u001b[?25hRequirement already satisfied: tqdm>=4.65.0 in /usr/local/lib/python3.12/dist-packages (from chromadb) (4.67.3)\n","Collecting overrides>=7.3.1 (from chromadb)\n","  Downloading overrides-7.7.0-py3-none-any.whl.metadata (5.8 kB)\n","Requirement already satisfied: importlib-resources in /usr/local/lib/python3.12/dist-packages (from chromadb) (7.1.0)\n","Requirement already satisfied: grpcio>=1.58.0 in /usr/local/lib/python3.12/dist-packages (from chromadb) (1.82.1)\n","Collecting bcrypt>=4.0.1 (from chromadb)\n","  Downloading bcrypt-5.0.0-cp39-abi3-manylinux_2_34_x86_64.whl.metadata (10 kB)\n","Requirement already satisfied: typer>=0.9.0 in /usr/local/lib/python3.12/dist-packages (from chromadb) (0.26.8)\n","Collecting kubernetes>=28.1.0 (from chromadb)\n","  Downloading kubernetes-36.0.3-py2.py3-none-any.whl.metadata (1.8 kB)\n","Requirement already satisfied: tenacity>=8.2.3 in /usr/local/lib/python3.12/dist-packages (from chromadb) (9.1.4)\n","Requirement already satisfied: pyyaml>=6.0.0 in /usr/local/lib/python3.12/dist-packages (from chromadb) (6.0.3)\n","Requirement already satisfied: mmh3>=4.0.1 in /usr/local/lib/python3.12/dist-packages (from chromadb) (5.2.1)\n","Requirement already satisfied: orjson>=3.9.12 in /usr/local/lib/python3.12/dist-packages (from chromadb) (3.11.9)\n","Requirement already satisfied: httpx>=0.27.0 in /usr/local/lib/python3.12/dist-packages (from chromadb) (0.28.1)\n","Requirement already satisfied: rich>=10.11.0 in /usr/local/lib/python3.12/dist-packages (from chromadb) (13.9.4)\n","Requirement already satisfied: jsonschema>=4.19.0 in /usr/local/lib/python3.12/dist-packages (from chromadb) (4.26.0)\n","Requirement already satisfied: packaging>=24.0 in /usr/local/lib/python3.12/dist-packages (from build>=1.0.3->chromadb) (26.2)\n","Collecting pyproject_hooks (from build>=1.0.3->chromadb)\n","  Downloading pyproject_hooks-1.2.0-py3-none-any.whl.metadata (1.3 kB)\n","Requirement already satisfied: anyio in /usr/local/lib/python3.12/dist-packages (from httpx>=0.27.0->chromadb) (4.14.2)\n","Requirement already satisfied: certifi in /usr/local/lib/python3.12/dist-packages (from httpx>=0.27.0->chromadb) (2026.6.17)\n","Requirement already satisfied: httpcore==1.* in /usr/local/lib/python3.12/dist-packages (from httpx>=0.27.0->chromadb) (1.0.9)\n","Requirement already satisfied: idna in /usr/local/lib/python3.12/dist-packages (from httpx>=0.27.0->chromadb) (3.18)\n","Requirement already satisfied: h11>=0.16 in /usr/local/lib/python3.12/dist-packages (from httpcore==1.*->httpx>=0.27.0->chromadb) (0.16.0)\n","Requirement already satisfied: attrs>=22.2.0 in /usr/local/lib/python3.12/dist-packages (from jsonschema>=4.19.0->chromadb) (26.1.0)\n","Requirement already satisfied: jsonschema-specifications>=2023.03.6 in /usr/local/lib/python3.12/dist-packages (from jsonschema>=4.19.0->chromadb) (2025.9.1)\n","Requirement already satisfied: referencing>=0.28.4 in /usr/local/lib/python3.12/dist-packages (from jsonschema>=4.19.0->chromadb) (0.37.0)\n","Requirement already satisfied: rpds-py>=0.25.0 in /usr/local/lib/python3.12/dist-packages (from jsonschema>=4.19.0->chromadb) (2026.6.3)\n","Requirement already satisfied: six>=1.9.0 in /usr/local/lib/python3.12/dist-packages (from kubernetes>=28.1.0->chromadb) (1.17.0)\n","Requirement already satisfied: python-dateutil>=2.5.3 in /usr/local/lib/python3.12/dist-packages (from kubernetes>=28.1.0->chromadb) (2.9.0.post0)\n","Requirement already satisfied: websocket-client!=0.40.0,!=0.41.*,!=0.42.*,>=0.32.0 in /usr/local/lib/python3.12/dist-packages (from kubernetes>=28.1.0->chromadb) (1.9.0)\n","Requirement already satisfied: requests in /usr/local/lib/python3.12/dist-packages (from kubernetes>=28.1.0->chromadb) (2.32.4)\n","Requirement already satisfied: requests-oauthlib in /usr/local/lib/python3.12/dist-packages (from kubernetes>=28.1.0->chromadb) (2.0.0)\n","Requirement already satisfied: urllib3!=2.6.0,>=1.24.2 in /usr/local/lib/python3.12/dist-packages (from kubernetes>=28.1.0->chromadb) (2.5.0)\n","Collecting durationpy>=0.7 (from kubernetes>=28.1.0->chromadb)\n","  Downloading durationpy-0.10-py3-none-any.whl.metadata (340 bytes)\n","Requirement already satisfied: aiohttp<4.0.0,>=3.13.5 in /usr/local/lib/python3.12/dist-packages (from kubernetes>=28.1.0->chromadb) (3.14.1)\n","Requirement already satisfied: flatbuffers in /usr/local/lib/python3.12/dist-packages (from onnxruntime>=1.14.1->chromadb) (25.12.19)\n","Requirement already satisfied: protobuf>=4.25.8 in /usr/local/lib/python3.12/dist-packages (from onnxruntime>=1.14.1->chromadb) (5.29.6)\n","Requirement already satisfied: googleapis-common-protos~=1.57 in /usr/local/lib/python3.12/dist-packages (from opentelemetry-exporter-otlp-proto-grpc>=1.2.0->chromadb) (1.75.0)\n","Collecting opentelemetry-exporter-otlp-proto-common==1.44.0 (from opentelemetry-exporter-otlp-proto-grpc>=1.2.0->chromadb)\n","  Downloading opentelemetry_exporter_otlp_proto_common-1.44.0-py3-none-any.whl.metadata (1.8 kB)\n","Collecting opentelemetry-proto==1.44.0 (from opentelemetry-exporter-otlp-proto-grpc>=1.2.0->chromadb)\n","  Downloading opentelemetry_proto-1.44.0-py3-none-any.whl.metadata (2.3 kB)\n","Collecting opentelemetry-sdk>=1.2.0 (from chromadb)\n","  Downloading opentelemetry_sdk-1.44.0-py3-none-any.whl.metadata (1.6 kB)\n","Collecting opentelemetry-api>=1.2.0 (from chromadb)\n","  Downloading opentelemetry_api-1.44.0-py3-none-any.whl.metadata (1.4 kB)\n","Collecting opentelemetry-semantic-conventions==0.65b0 (from opentelemetry-sdk>=1.2.0->chromadb)\n","  Downloading opentelemetry_semantic_conventions-0.65b0-py3-none-any.whl.metadata (2.4 kB)\n","Requirement already satisfied: annotated-types>=0.6.0 in /usr/local/lib/python3.12/dist-packages (from pydantic>=2.0->chromadb) (0.7.0)\n","Requirement already satisfied: pydantic-core==2.46.4 in /usr/local/lib/python3.12/dist-packages (from pydantic>=2.0->chromadb) (2.46.4)\n","Requirement already satisfied: typing-inspection>=0.4.2 in /usr/local/lib/python3.12/dist-packages (from pydantic>=2.0->chromadb) (0.4.2)\n","Requirement already satisfied: python-dotenv>=0.21.0 in /usr/local/lib/python3.12/dist-packages (from pydantic-settings>=2.0->chromadb) (1.2.2)\n","Requirement already satisfied: markdown-it-py>=2.2.0 in /usr/local/lib/python3.12/dist-packages (from rich>=10.11.0->chromadb) (4.2.0)\n","Requirement already satisfied: pygments<3.0.0,>=2.13.0 in /usr/local/lib/python3.12/dist-packages (from rich>=10.11.0->chromadb) (2.20.0)\n","Requirement already satisfied: huggingface-hub<2.0,>=0.16.4 in /usr/local/lib/python3.12/dist-packages (from tokenizers>=0.13.2->chromadb) (1.23.0)\n","Requirement already satisfied: shellingham>=1.3.0 in /usr/local/lib/python3.12/dist-packages (from typer>=0.9.0->chromadb) (1.5.4)\n","Requirement already satisfied: annotated-doc>=0.0.2 in /usr/local/lib/python3.12/dist-packages (from typer>=0.9.0->chromadb) (0.0.4)\n","Requirement already satisfied: click>=7.0 in /usr/local/lib/python3.12/dist-packages (from uvicorn>=0.18.3->uvicorn[standard]>=0.18.3->chromadb) (8.4.2)\n","Requirement already satisfied: httptools>=0.8.0 in /usr/local/lib/python3.12/dist-packages (from uvicorn[standard]>=0.18.3->chromadb) (0.8.0)\n","Requirement already satisfied: uvloop>=0.15.1 in /usr/local/lib/python3.12/dist-packages (from uvicorn[standard]>=0.18.3->chromadb) (0.22.1)\n","Requirement already satisfied: watchfiles>=0.20 in /usr/local/lib/python3.12/dist-packages (from uvicorn[standard]>=0.18.3->chromadb) (1.2.0)\n","Requirement already satisfied: websockets>=13.0 in /usr/local/lib/python3.12/dist-packages (from uvicorn[standard]>=0.18.3->chromadb) (15.0.1)\n","Requirement already satisfied: aiohappyeyeballs>=2.5.0 in /usr/local/lib/python3.12/dist-packages (from aiohttp<4.0.0,>=3.13.5->kubernetes>=28.1.0->chromadb) (2.7.1)\n","Requirement already satisfied: aiosignal>=1.4.0 in /usr/local/lib/python3.12/dist-packages (from aiohttp<4.0.0,>=3.13.5->kubernetes>=28.1.0->chromadb) (1.4.0)\n","Requirement already satisfied: frozenlist>=1.1.1 in /usr/local/lib/python3.12/dist-packages (from aiohttp<4.0.0,>=3.13.5->kubernetes>=28.1.0->chromadb) (1.8.0)\n","Requirement already satisfied: multidict<7.0,>=4.5 in /usr/local/lib/python3.12/dist-packages (from aiohttp<4.0.0,>=3.13.5->kubernetes>=28.1.0->chromadb) (6.7.1)\n","Requirement already satisfied: propcache>=0.2.0 in /usr/local/lib/python3.12/dist-packages (from aiohttp<4.0.0,>=3.13.5->kubernetes>=28.1.0->chromadb) (0.5.2)\n","Requirement already satisfied: yarl<2.0,>=1.17.0 in /usr/local/lib/python3.12/dist-packages (from aiohttp<4.0.0,>=3.13.5->kubernetes>=28.1.0->chromadb) (1.24.2)\n","Requirement already satisfied: filelock>=3.10.0 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub<2.0,>=0.16.4->tokenizers>=0.13.2->chromadb) (3.29.7)\n","Requirement already satisfied: fsspec>=2023.5.0 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub<2.0,>=0.16.4->tokenizers>=0.13.2->chromadb) (2025.3.0)\n","Requirement already satisfied: hf-xet<2.0.0,>=1.5.1 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub<2.0,>=0.16.4->tokenizers>=0.13.2->chromadb) (1.5.1)\n","Requirement already satisfied: mdurl~=0.1 in /usr/local/lib/python3.12/dist-packages (from markdown-it-py>=2.2.0->rich>=10.11.0->chromadb) (0.1.2)\n","Requirement already satisfied: charset_normalizer<4,>=2 in /usr/local/lib/python3.12/dist-packages (from requests->kubernetes>=28.1.0->chromadb) (3.4.9)\n","Requirement already satisfied: oauthlib>=3.0.0 in /usr/local/lib/python3.12/dist-packages (from requests-oauthlib->kubernetes>=28.1.0->chromadb) (3.3.1)\n","Downloading chromadb-1.5.9-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (23.3 MB)\n","\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m23.3/23.3 MB\u001b[0m \u001b[31m55.6 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n","\u001b[?25hDownloading bcrypt-5.0.0-cp39-abi3-manylinux_2_34_x86_64.whl (278 kB)\n","\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m278.2/278.2 kB\u001b[0m \u001b[31m13.8 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n","\u001b[?25hDownloading build-1.5.0-py3-none-any.whl (26 kB)\n","Downloading kubernetes-36.0.3-py2.py3-none-any.whl (4.6 MB)\n","\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m4.6/4.6 MB\u001b[0m \u001b[31m71.0 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n","\u001b[?25hDownloading onnxruntime-1.28.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (19.2 MB)\n","\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m19.2/19.2 MB\u001b[0m \u001b[31m57.1 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n","\u001b[?25hDownloading opentelemetry_exporter_otlp_proto_grpc-1.44.0-py3-none-any.whl (19 kB)\n","Downloading opentelemetry_exporter_otlp_proto_common-1.44.0-py3-none-any.whl (17 kB)\n","Downloading opentelemetry_proto-1.44.0-py3-none-any.whl (72 kB)\n","\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m72.5/72.5 kB\u001b[0m \u001b[31m5.6 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n","\u001b[?25hDownloading opentelemetry_sdk-1.44.0-py3-none-any.whl (137 kB)\n","\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m137.2/137.2 kB\u001b[0m \u001b[31m8.5 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n","\u001b[?25hDownloading opentelemetry_api-1.44.0-py3-none-any.whl (60 kB)\n","\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m60.0/60.0 kB\u001b[0m \u001b[31m3.9 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n","\u001b[?25hDownloading opentelemetry_semantic_conventions-0.65b0-py3-none-any.whl (204 kB)\n","\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m204.6/204.6 kB\u001b[0m \u001b[31m12.9 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n","\u001b[?25hDownloading overrides-7.7.0-py3-none-any.whl (17 kB)\n","Downloading pybase64-1.4.3-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl (71 kB)\n","\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m71.6/71.6 kB\u001b[0m \u001b[31m4.6 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n","\u001b[?25hDownloading pydantic_settings-2.14.2-py3-none-any.whl (61 kB)\n","\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m61.7/61.7 kB\u001b[0m \u001b[31m5.3 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n","\u001b[?25hDownloading pypika-0.51.1-py2.py3-none-any.whl (60 kB)\n","\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m60.6/60.6 kB\u001b[0m \u001b[31m3.2 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n","\u001b[?25hDownloading durationpy-0.10-py3-none-any.whl (3.9 kB)\n","Downloading pyproject_hooks-1.2.0-py3-none-any.whl (10 kB)\n","Installing collected packages: pypika, durationpy, pyproject_hooks, pybase64, overrides, opentelemetry-proto, opentelemetry-api, onnxruntime, bcrypt, opentelemetry-semantic-conventions, opentelemetry-exporter-otlp-proto-common, build, pydantic-settings, opentelemetry-sdk, kubernetes, opentelemetry-exporter-otlp-proto-grpc, chromadb\n","  Attempting uninstall: opentelemetry-api\n","    Found existing installation: opentelemetry-api 1.42.1\n","    Uninstalling opentelemetry-api-1.42.1:\n","      Successfully uninstalled opentelemetry-api-1.42.1\n","  Attempting uninstall: opentelemetry-semantic-conventions\n","    Found existing installation: opentelemetry-semantic-conventions 0.63b1\n","    Uninstalling opentelemetry-semantic-conventions-0.63b1:\n","      Successfully uninstalled opentelemetry-semantic-conventions-0.63b1\n","  Attempting uninstall: opentelemetry-sdk\n","    Found existing installation: opentelemetry-sdk 1.42.1\n","    Uninstalling opentelemetry-sdk-1.42.1:\n","      Successfully uninstalled opentelemetry-sdk-1.42.1\n","\u001b[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n","google-adk 2.4.0 requires opentelemetry-api<=1.42.1,>=1.39, but you have opentelemetry-api 1.44.0 which is incompatible.\n","google-adk 2.4.0 requires opentelemetry-sdk<=1.42.1,>=1.39, but you have opentelemetry-sdk 1.44.0 which is incompatible.\u001b[0m\u001b[31m\n","\u001b[0mSuccessfully installed bcrypt-5.0.0 build-1.5.0 chromadb-1.5.9 durationpy-0.10 kubernetes-36.0.3 onnxruntime-1.28.0 opentelemetry-api-1.44.0 opentelemetry-exporter-otlp-proto-common-1.44.0 opentelemetry-exporter-otlp-proto-grpc-1.44.0 opentelemetry-proto-1.44.0 opentelemetry-sdk-1.44.0 opentelemetry-semantic-conventions-0.65b0 overrides-7.7.0 pybase64-1.4.3 pydantic-settings-2.14.2 pypika-0.51.1 pyproject_hooks-1.2.0\n","Requirement already satisfied: sentence-transformers in /usr/local/lib/python3.12/dist-packages (5.6.0)\n","Requirement already satisfied: transformers<6.0.0,>=4.41.0 in /usr/local/lib/python3.12/dist-packages (from sentence-transformers) (5.13.1)\n","Requirement already satisfied: huggingface-hub>=0.23.0 in /usr/local/lib/python3.12/dist-packages (from sentence-transformers) (1.23.0)\n","Requirement already satisfied: torch>=1.11.0 in /usr/local/lib/python3.12/dist-packages (from sentence-transformers) (2.11.0+cpu)\n","Requirement already satisfied: numpy>=1.20.0 in /usr/local/lib/python3.12/dist-packages (from sentence-transformers) (2.0.2)\n","Requirement already satisfied: scikit-learn>=0.22.0 in /usr/local/lib/python3.12/dist-packages (from sentence-transformers) (1.6.1)\n","Requirement already satisfied: scipy>=1.0.0 in /usr/local/lib/python3.12/dist-packages (from sentence-transformers) (1.16.3)\n","Requirement already satisfied: typing_extensions>=4.5.0 in /usr/local/lib/python3.12/dist-packages (from sentence-transformers) (4.16.0)\n","Requirement already satisfied: tqdm>=4.0.0 in /usr/local/lib/python3.12/dist-packages (from sentence-transformers) (4.67.3)\n","Requirement already satisfied: click<9.0.0,>=8.4.2 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub>=0.23.0->sentence-transformers) (8.4.2)\n","Requirement already satisfied: filelock>=3.10.0 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub>=0.23.0->sentence-transformers) (3.29.7)\n","Requirement already satisfied: fsspec>=2023.5.0 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub>=0.23.0->sentence-transformers) (2025.3.0)\n","Requirement already satisfied: hf-xet<2.0.0,>=1.5.1 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub>=0.23.0->sentence-transformers) (1.5.1)\n","Requirement already satisfied: httpx<1,>=0.23.0 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub>=0.23.0->sentence-transformers) (0.28.1)\n","Requirement already satisfied: packaging>=20.9 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub>=0.23.0->sentence-transformers) (26.2)\n","Requirement already satisfied: pyyaml>=5.1 in /usr/local/lib/python3.12/dist-packages (from huggingface-hub>=0.23.0->sentence-transformers) (6.0.3)\n","Requirement already satisfied: joblib>=1.2.0 in /usr/local/lib/python3.12/dist-packages (from scikit-learn>=0.22.0->sentence-transformers) (1.5.3)\n","Requirement already satisfied: threadpoolctl>=3.1.0 in /usr/local/lib/python3.12/dist-packages (from scikit-learn>=0.22.0->sentence-transformers) (3.6.0)\n","Requirement already satisfied: setuptools<82 in /usr/local/lib/python3.12/dist-packages (from torch>=1.11.0->sentence-transformers) (75.2.0)\n","Requirement already satisfied: sympy>=1.13.3 in /usr/local/lib/python3.12/dist-packages (from torch>=1.11.0->sentence-transformers) (1.14.0)\n","Requirement already satisfied: networkx>=2.5.1 in /usr/local/lib/python3.12/dist-packages (from torch>=1.11.0->sentence-transformers) (3.6.1)\n","Requirement already satisfied: jinja2 in /usr/local/lib/python3.12/dist-packages (from torch>=1.11.0->sentence-transformers) (3.1.6)\n","Requirement already satisfied: regex>=2025.10.22 in /usr/local/lib/python3.12/dist-packages (from transformers<6.0.0,>=4.41.0->sentence-transformers) (2025.11.3)\n","Requirement already satisfied: tokenizers<=0.23.0,>=0.22.0 in /usr/local/lib/python3.12/dist-packages (from transformers<6.0.0,>=4.41.0->sentence-transformers) (0.22.2)\n","Requirement already satisfied: typer in /usr/local/lib/python3.12/dist-packages (from transformers<6.0.0,>=4.41.0->sentence-transformers) (0.26.8)\n","Requirement already satisfied: safetensors>=0.8.0 in /usr/local/lib/python3.12/dist-packages (from transformers<6.0.0,>=4.41.0->sentence-transformers) (0.8.0)\n","Requirement already satisfied: anyio in /usr/local/lib/python3.12/dist-packages (from httpx<1,>=0.23.0->huggingface-hub>=0.23.0->sentence-transformers) (4.14.2)\n","Requirement already satisfied: certifi in /usr/local/lib/python3.12/dist-packages (from httpx<1,>=0.23.0->huggingface-hub>=0.23.0->sentence-transformers) (2026.6.17)\n","Requirement already satisfied: httpcore==1.* in /usr/local/lib/python3.12/dist-packages (from httpx<1,>=0.23.0->huggingface-hub>=0.23.0->sentence-transformers) (1.0.9)\n","Requirement already satisfied: idna in /usr/local/lib/python3.12/dist-packages (from httpx<1,>=0.23.0->huggingface-hub>=0.23.0->sentence-transformers) (3.18)\n","Requirement already satisfied: h11>=0.16 in /usr/local/lib/python3.12/dist-packages (from httpcore==1.*->httpx<1,>=0.23.0->huggingface-hub>=0.23.0->sentence-transformers) (0.16.0)\n","Requirement already satisfied: mpmath<1.4,>=1.1.0 in /usr/local/lib/python3.12/dist-packages (from sympy>=1.13.3->torch>=1.11.0->sentence-transformers) (1.3.0)\n","Requirement already satisfied: MarkupSafe>=2.0 in /usr/local/lib/python3.12/dist-packages (from jinja2->torch>=1.11.0->sentence-transformers) (3.0.3)\n","Requirement already satisfied: shellingham>=1.3.0 in /usr/local/lib/python3.12/dist-packages (from typer->transformers<6.0.0,>=4.41.0->sentence-transformers) (1.5.4)\n","Requirement already satisfied: rich>=13.8.0 in /usr/local/lib/python3.12/dist-packages (from typer->transformers<6.0.0,>=4.41.0->sentence-transformers) (13.9.4)\n","Requirement already satisfied: annotated-doc>=0.0.2 in /usr/local/lib/python3.12/dist-packages (from typer->transformers<6.0.0,>=4.41.0->sentence-transformers) (0.0.4)\n","Requirement already satisfied: markdown-it-py>=2.2.0 in /usr/local/lib/python3.12/dist-packages (from rich>=13.8.0->typer->transformers<6.0.0,>=4.41.0->sentence-transformers) (4.2.0)\n","Requirement already satisfied: pygments<3.0.0,>=2.13.0 in /usr/local/lib/python3.12/dist-packages (from rich>=13.8.0->typer->transformers<6.0.0,>=4.41.0->sentence-transformers) (2.20.0)\n","Requirement already satisfied: mdurl~=0.1 in /usr/local/lib/python3.12/dist-packages (from markdown-it-py>=2.2.0->rich>=13.8.0->typer->transformers<6.0.0,>=4.41.0->sentence-transformers) (0.1.2)\n","Requirement already satisfied: google-generativeai in /usr/local/lib/python3.12/dist-packages (0.8.6)\n","Requirement already satisfied: google-ai-generativelanguage==0.6.15 in /usr/local/lib/python3.12/dist-packages (from google-generativeai) (0.6.15)\n","Requirement already satisfied: google-api-core in /usr/local/lib/python3.12/dist-packages (from google-generativeai) (2.30.3)\n","Requirement already satisfied: google-api-python-client in /usr/local/lib/python3.12/dist-packages (from google-generativeai) (2.198.0)\n","Requirement already satisfied: google-auth>=2.15.0 in /usr/local/lib/python3.12/dist-packages (from google-generativeai) (2.49.0)\n","Requirement already satisfied: protobuf in /usr/local/lib/python3.12/dist-packages (from google-generativeai) (5.29.6)\n","Requirement already satisfied: pydantic in /usr/local/lib/python3.12/dist-packages (from google-generativeai) (2.13.4)\n","Requirement already satisfied: tqdm in /usr/local/lib/python3.12/dist-packages (from google-generativeai) (4.67.3)\n","Requirement already satisfied: typing-extensions in /usr/local/lib/python3.12/dist-packages (from google-generativeai) (4.16.0)\n","Requirement already satisfied: proto-plus<2.0.0dev,>=1.22.3 in /usr/local/lib/python3.12/dist-packages (from google-ai-generativelanguage==0.6.15->google-generativeai) (1.28.1)\n","Requirement already satisfied: googleapis-common-protos<2.0.0,>=1.63.2 in /usr/local/lib/python3.12/dist-packages (from google-api-core->google-generativeai) (1.75.0)\n","Requirement already satisfied: requests<3.0.0,>=2.20.0 in /usr/local/lib/python3.12/dist-packages (from google-api-core->google-generativeai) (2.32.4)\n","Requirement already satisfied: pyasn1-modules>=0.2.1 in /usr/local/lib/python3.12/dist-packages (from google-auth>=2.15.0->google-generativeai) (0.4.2)\n","Requirement already satisfied: cryptography>=38.0.3 in /usr/local/lib/python3.12/dist-packages (from google-auth>=2.15.0->google-generativeai) (49.0.0)\n","Requirement already satisfied: rsa<5,>=3.1.4 in /usr/local/lib/python3.12/dist-packages (from google-auth>=2.15.0->google-generativeai) (4.9.1)\n","Requirement already satisfied: httplib2<1.0.0,>=0.19.0 in /usr/local/lib/python3.12/dist-packages (from google-api-python-client->google-generativeai) (0.32.0)\n","Requirement already satisfied: google-auth-httplib2<1.0.0,>=0.2.0 in /usr/local/lib/python3.12/dist-packages (from google-api-python-client->google-generativeai) (0.4.0)\n","Requirement already satisfied: uritemplate<5,>=3.0.1 in /usr/local/lib/python3.12/dist-packages (from google-api-python-client->google-generativeai) (4.2.0)\n","Requirement already satisfied: annotated-types>=0.6.0 in /usr/local/lib/python3.12/dist-packages (from pydantic->google-generativeai) (0.7.0)\n","Requirement already satisfied: pydantic-core==2.46.4 in /usr/local/lib/python3.12/dist-packages (from pydantic->google-generativeai) (2.46.4)\n","Requirement already satisfied: typing-inspection>=0.4.2 in /usr/local/lib/python3.12/dist-packages (from pydantic->google-generativeai) (0.4.2)\n","Requirement already satisfied: cffi>=2.0.0 in /usr/local/lib/python3.12/dist-packages (from cryptography>=38.0.3->google-auth>=2.15.0->google-generativeai) (2.1.0)\n","Requirement already satisfied: grpcio<2.0.0,>=1.33.2 in /usr/local/lib/python3.12/dist-packages (from google-api-core[grpc]!=2.0.*,!=2.1.*,!=2.10.*,!=2.2.*,!=2.3.*,!=2.4.*,!=2.5.*,!=2.6.*,!=2.7.*,!=2.8.*,!=2.9.*,<3.0.0dev,>=1.34.1->google-ai-generativelanguage==0.6.15->google-generativeai) (1.82.1)\n","Requirement already satisfied: grpcio-status<2.0.0,>=1.33.2 in /usr/local/lib/python3.12/dist-packages (from google-api-core[grpc]!=2.0.*,!=2.1.*,!=2.10.*,!=2.2.*,!=2.3.*,!=2.4.*,!=2.5.*,!=2.6.*,!=2.7.*,!=2.8.*,!=2.9.*,<3.0.0dev,>=1.34.1->google-ai-generativelanguage==0.6.15->google-generativeai) (1.71.2)\n","Requirement already satisfied: pyparsing<4,>=3.1 in /usr/local/lib/python3.12/dist-packages (from httplib2<1.0.0,>=0.19.0->google-api-python-client->google-generativeai) (3.3.2)\n","Requirement already satisfied: pyasn1<0.7.0,>=0.6.1 in /usr/local/lib/python3.12/dist-packages (from pyasn1-modules>=0.2.1->google-auth>=2.15.0->google-generativeai) (0.6.4)\n","Requirement already satisfied: charset_normalizer<4,>=2 in /usr/local/lib/python3.12/dist-packages (from requests<3.0.0,>=2.20.0->google-api-core->google-generativeai) (3.4.9)\n","Requirement already satisfied: idna<4,>=2.5 in /usr/local/lib/python3.12/dist-packages (from requests<3.0.0,>=2.20.0->google-api-core->google-generativeai) (3.18)\n","Requirement already satisfied: urllib3<3,>=1.21.1 in /usr/local/lib/python3.12/dist-packages (from requests<3.0.0,>=2.20.0->google-api-core->google-generativeai) (2.5.0)\n","Requirement already satisfied: certifi>=2017.4.17 in /usr/local/lib/python3.12/dist-packages (from requests<3.0.0,>=2.20.0->google-api-core->google-generativeai) (2026.6.17)\n","Requirement already satisfied: pycparser in /usr/local/lib/python3.12/dist-packages (from cffi>=2.0.0->cryptography>=38.0.3->google-auth>=2.15.0->google-generativeai) (3.0)\n"]},{"output_type":"stream","name":"stderr","text":["/usr/local/lib/python3.12/dist-packages/google/colab/_import_hooks/_hook_injector.py:55: FutureWarning: \n","\n","All support for the `google.generativeai` package has ended. It will no longer be receiving \n","updates or bug fixes. Please switch to the `google.genai` package as soon as possible.\n","See README for more details:\n","\n","https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md\n","\n","  loader.exec_module(module)\n"]}]},{"cell_type":"code","metadata":{"colab":{"base_uri":"https://localhost:8080/","height":573},"id":"9b0f8193","executionInfo":{"status":"ok","timestamp":1784944591587,"user_tz":-330,"elapsed":521,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}},"outputId":"d47d2233-7ce5-4182-fa38-213718bf31cc"},"source":["import pandas as pd\n","\n","# Load a sample CSV file into a DataFrame named 'df_app_records'\n","# You can replace '/content/sample_data/california_housing_train.csv' with the path to your actual CSV file.\n","df_app_records = pd.read_csv('/content/googleplaystore[1].csv')\n","\n","# Display the first 5 rows of the DataFrame\n","display(df_app_records.head())"],"execution_count":19,"outputs":[{"output_type":"display_data","data":{"text/plain":["                                                 App        Category  Rating  \\\n","0     Photo Editor & Candy Camera & Grid & ScrapBook  ART_AND_DESIGN     4.1   \n","1                                Coloring book moana  ART_AND_DESIGN     3.9   \n","2  U Launcher Lite – FREE Live Cool Themes, Hide ...  ART_AND_DESIGN     4.7   \n","3                              Sketch - Draw & Paint  ART_AND_DESIGN     4.5   \n","4              Pixel Draw - Number Art Coloring Book  ART_AND_DESIGN     4.3   \n","\n","  Reviews  Size     Installs  Type Price Content Rating  \\\n","0     159   19M      10,000+  Free     0       Everyone   \n","1     967   14M     500,000+  Free     0       Everyone   \n","2   87510  8.7M   5,000,000+  Free     0       Everyone   \n","3  215644   25M  50,000,000+  Free     0           Teen   \n","4     967  2.8M     100,000+  Free     0       Everyone   \n","\n","                      Genres      Last Updated         Current Ver  \\\n","0               Art & Design   January 7, 2018               1.0.0   \n","1  Art & Design;Pretend Play  January 15, 2018               2.0.0   \n","2               Art & Design    August 1, 2018               1.2.4   \n","3               Art & Design      June 8, 2018  Varies with device   \n","4    Art & Design;Creativity     June 20, 2018                 1.1   \n","\n","    Android Ver  \n","0  4.0.3 and up  \n","1  4.0.3 and up  \n","2  4.0.3 and up  \n","3    4.2 and up  \n","4    4.4 and up  "],"text/html":["\n","  <div id=\"df-1bf3abe3-20dd-4bbd-9ae3-5d836ad8b10d\" class=\"colab-df-container\">\n","    <div>\n","<style scoped>\n","    .dataframe tbody tr th:only-of-type {\n","        vertical-align: middle;\n","    }\n","\n","    .dataframe tbody tr th {\n","        vertical-align: top;\n","    }\n","\n","    .dataframe thead th {\n","        text-align: right;\n","    }\n","</style>\n","<table border=\"1\" class=\"dataframe\">\n","  <thead>\n","    <tr style=\"text-align: right;\">\n","      <th></th>\n","      <th>App</th>\n","      <th>Category</th>\n","      <th>Rating</th>\n","      <th>Reviews</th>\n","      <th>Size</th>\n","      <th>Installs</th>\n","      <th>Type</th>\n","      <th>Price</th>\n","      <th>Content Rating</th>\n","      <th>Genres</th>\n","      <th>Last Updated</th>\n","      <th>Current Ver</th>\n","      <th>Android Ver</th>\n","    </tr>\n","  </thead>\n","  <tbody>\n","    <tr>\n","      <th>0</th>\n","      <td>Photo Editor &amp; Candy Camera &amp; Grid &amp; ScrapBook</td>\n","      <td>ART_AND_DESIGN</td>\n","      <td>4.1</td>\n","      <td>159</td>\n","      <td>19M</td>\n","      <td>10,000+</td>\n","      <td>Free</td>\n","      <td>0</td>\n","      <td>Everyone</td>\n","      <td>Art &amp; Design</td>\n","      <td>January 7, 2018</td>\n","      <td>1.0.0</td>\n","      <td>4.0.3 and up</td>\n","    </tr>\n","    <tr>\n","      <th>1</th>\n","      <td>Coloring book moana</td>\n","      <td>ART_AND_DESIGN</td>\n","      <td>3.9</td>\n","      <td>967</td>\n","      <td>14M</td>\n","      <td>500,000+</td>\n","      <td>Free</td>\n","      <td>0</td>\n","      <td>Everyone</td>\n","      <td>Art &amp; Design;Pretend Play</td>\n","      <td>January 15, 2018</td>\n","      <td>2.0.0</td>\n","      <td>4.0.3 and up</td>\n","    </tr>\n","    <tr>\n","      <th>2</th>\n","      <td>U Launcher Lite – FREE Live Cool Themes, Hide ...</td>\n","      <td>ART_AND_DESIGN</td>\n","      <td>4.7</td>\n","      <td>87510</td>\n","      <td>8.7M</td>\n","      <td>5,000,000+</td>\n","      <td>Free</td>\n","      <td>0</td>\n","      <td>Everyone</td>\n","      <td>Art &amp; Design</td>\n","      <td>August 1, 2018</td>\n","      <td>1.2.4</td>\n","      <td>4.0.3 and up</td>\n","    </tr>\n","    <tr>\n","      <th>3</th>\n","      <td>Sketch - Draw &amp; Paint</td>\n","      <td>ART_AND_DESIGN</td>\n","      <td>4.5</td>\n","      <td>215644</td>\n","      <td>25M</td>\n","      <td>50,000,000+</td>\n","      <td>Free</td>\n","      <td>0</td>\n","      <td>Teen</td>\n","      <td>Art &amp; Design</td>\n","      <td>June 8, 2018</td>\n","      <td>Varies with device</td>\n","      <td>4.2 and up</td>\n","    </tr>\n","    <tr>\n","      <th>4</th>\n","      <td>Pixel Draw - Number Art Coloring Book</td>\n","      <td>ART_AND_DESIGN</td>\n","      <td>4.3</td>\n","      <td>967</td>\n","      <td>2.8M</td>\n","      <td>100,000+</td>\n","      <td>Free</td>\n","      <td>0</td>\n","      <td>Everyone</td>\n","      <td>Art &amp; Design;Creativity</td>\n","      <td>June 20, 2018</td>\n","      <td>1.1</td>\n","      <td>4.4 and up</td>\n","    </tr>\n","  </tbody>\n","</table>\n","</div>\n","    <div class=\"colab-df-buttons\">\n","\n","  <div class=\"colab-df-container\">\n","    <button class=\"colab-df-convert\" onclick=\"convertToInteractive('df-1bf3abe3-20dd-4bbd-9ae3-5d836ad8b10d')\"\n","            title=\"Convert this dataframe to an interactive table.\"\n","            style=\"display:none;\">\n","\n","  <svg xmlns=\"http://www.w3.org/2000/svg\" height=\"24px\" viewBox=\"0 -960 960 960\">\n","    <path d=\"M120-120v-720h720v720H120Zm60-500h600v-160H180v160Zm220 220h160v-160H400v160Zm0 220h160v-160H400v160ZM180-400h160v-160H180v160Zm440 0h160v-160H620v160ZM180-180h160v-160H180v160Zm440 0h160v-160H620v160Z\"/>\n","  </svg>\n","    </button>\n","\n","  <style>\n","    .colab-df-container {\n","      display:flex;\n","      gap: 12px;\n","    }\n","\n","    .colab-df-convert {\n","      background-color: #E8F0FE;\n","      border: none;\n","      border-radius: 50%;\n","      cursor: pointer;\n","      display: none;\n","      fill: #1967D2;\n","      height: 32px;\n","      padding: 0 0 0 0;\n","      width: 32px;\n","    }\n","\n","    .colab-df-convert:hover {\n","      background-color: #E2EBFA;\n","      box-shadow: 0px 1px 2px rgba(60, 64, 67, 0.3), 0px 1px 3px 1px rgba(60, 64, 67, 0.15);\n","      fill: #174EA6;\n","    }\n","\n","    .colab-df-buttons div {\n","      margin-bottom: 4px;\n","    }\n","\n","    [theme=dark] .colab-df-convert {\n","      background-color: #3B4455;\n","      fill: #D2E3FC;\n","    }\n","\n","    [theme=dark] .colab-df-convert:hover {\n","      background-color: #434B5C;\n","      box-shadow: 0px 1px 3px 1px rgba(0, 0, 0, 0.15);\n","      filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.3));\n","      fill: #FFFFFF;\n","    }\n","  </style>\n","\n","    <script>\n","      const buttonEl =\n","        document.querySelector('#df-1bf3abe3-20dd-4bbd-9ae3-5d836ad8b10d button.colab-df-convert');\n","      buttonEl.style.display =\n","        google.colab.kernel.accessAllowed ? 'block' : 'none';\n","\n","      async function convertToInteractive(key) {\n","        const element = document.querySelector('#df-1bf3abe3-20dd-4bbd-9ae3-5d836ad8b10d');\n","        const dataTable =\n","          await google.colab.kernel.invokeFunction('convertToInteractive',\n","                                                    [key], {});\n","        if (!dataTable) return;\n","\n","        const docLinkHtml = 'Like what you see? Visit the ' +\n","          '<a target=\"_blank\" href=https://colab.research.google.com/notebooks/data_table.ipynb>data table notebook</a>'\n","          + ' to learn more about interactive tables.';\n","        element.innerHTML = '';\n","        dataTable['output_type'] = 'display_data';\n","        await google.colab.output.renderOutput(dataTable, element);\n","        const docLink = document.createElement('div');\n","        docLink.innerHTML = docLinkHtml;\n","        element.appendChild(docLink);\n","      }\n","    </script>\n","  </div>\n","\n","\n","    </div>\n","  </div>\n"],"application/vnd.google.colaboratory.intrinsic+json":{"type":"dataframe","summary":"{\n  \"name\": \"display(df_app_records\",\n  \"rows\": 5,\n  \"fields\": [\n    {\n      \"column\": \"App\",\n      \"properties\": {\n        \"dtype\": \"string\",\n        \"num_unique_values\": 5,\n        \"samples\": [\n          \"Coloring book moana\",\n          \"Pixel Draw - Number Art Coloring Book\",\n          \"U Launcher Lite \\u2013 FREE Live Cool Themes, Hide Apps\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Category\",\n      \"properties\": {\n        \"dtype\": \"category\",\n        \"num_unique_values\": 1,\n        \"samples\": [\n          \"ART_AND_DESIGN\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Rating\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 0.31622776601683805,\n        \"min\": 3.9,\n        \"max\": 4.7,\n        \"num_unique_values\": 5,\n        \"samples\": [\n          3.9\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Reviews\",\n      \"properties\": {\n        \"dtype\": \"string\",\n        \"num_unique_values\": 4,\n        \"samples\": [\n          \"967\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Size\",\n      \"properties\": {\n        \"dtype\": \"string\",\n        \"num_unique_values\": 5,\n        \"samples\": [\n          \"14M\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Installs\",\n      \"properties\": {\n        \"dtype\": \"string\",\n        \"num_unique_values\": 5,\n        \"samples\": [\n          \"500,000+\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Type\",\n      \"properties\": {\n        \"dtype\": \"category\",\n        \"num_unique_values\": 1,\n        \"samples\": [\n          \"Free\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Price\",\n      \"properties\": {\n        \"dtype\": \"category\",\n        \"num_unique_values\": 1,\n        \"samples\": [\n          \"0\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Content Rating\",\n      \"properties\": {\n        \"dtype\": \"category\",\n        \"num_unique_values\": 2,\n        \"samples\": [\n          \"Teen\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Genres\",\n      \"properties\": {\n        \"dtype\": \"string\",\n        \"num_unique_values\": 3,\n        \"samples\": [\n          \"Art & Design\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Last Updated\",\n      \"properties\": {\n        \"dtype\": \"object\",\n        \"num_unique_values\": 5,\n        \"samples\": [\n          \"January 15, 2018\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Current Ver\",\n      \"properties\": {\n        \"dtype\": \"string\",\n        \"num_unique_values\": 5,\n        \"samples\": [\n          \"2.0.0\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Android Ver\",\n      \"properties\": {\n        \"dtype\": \"string\",\n        \"num_unique_values\": 3,\n        \"samples\": [\n          \"4.0.3 and up\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    }\n  ]\n}"}},"metadata":{}}]},{"cell_type":"code","metadata":{"colab":{"base_uri":"https://localhost:8080/"},"id":"b194f472","executionInfo":{"status":"ok","timestamp":1784944602303,"user_tz":-330,"elapsed":945,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}},"outputId":"864526c4-92b0-4e94-f256-b6bed654f5cf"},"source":["from google.colab import userdata\n","\n","# Configure the Generative AI API with your API key from Colab Secrets.\n","# Make sure you have a secret named 'API_KEY' in Colab Secrets and 'Notebook access' is enabled.\n","try:\n","    GOOGLE_API_KEY = userdata.get('API_KEY')\n","    genai.configure(api_key=GOOGLE_API_KEY)\n","    print(\"Generative AI API configured successfully.\")\n","except userdata.SecretNotFoundError:\n","    print(\"Secret 'API_KEY' not found. Please set your API key in Colab Secrets.\")\n","except Exception as e:\n","    print(f\"Error configuring Generative AI API: {e}\")"],"execution_count":20,"outputs":[{"output_type":"stream","name":"stdout","text":["Secret 'API_KEY' not found. Please set your API key in Colab Secrets.\n"]}]},{"cell_type":"code","source":["# Step 1: Chunking Function\n","def chunk_text(text: str, chunk_size: int = 250, overlap: int = 50) -> list[str]:\n","    words = text.split()\n","    chunks = []\n","    for i in range(0, len(words), chunk_size - overlap):\n","        chunk = \" \".join(words[i:i + chunk_size])\n","        if chunk:\n","            chunks.append(chunk)\n","    return chunks"],"metadata":{"id":"KYat3yfc0XLt","executionInfo":{"status":"ok","timestamp":1784944343692,"user_tz":-330,"elapsed":32,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}}},"execution_count":3,"outputs":[]},{"cell_type":"code","source":["# Step 2: Embedding Generation Function\n","def generate_embeddings(chunks: list[str], model_name: str = \"all-MiniLM-L6-v2\"):\n","    embedder = SentenceTransformer(model_name)\n","    embeddings = embedder.encode(chunks, show_progress_bar=False)\n","    return embedder, embeddings"],"metadata":{"id":"FWk_DBV60YFO","executionInfo":{"status":"ok","timestamp":1784944343723,"user_tz":-330,"elapsed":8,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}}},"execution_count":4,"outputs":[]},{"cell_type":"code","source":["# Step 3: Vector Store Ingestion Function\n","def build_vector_store(chunks: list[str], embeddings, collection_name: str = \"playstore_kb\"):\n","    client = chromadb.Client()\n","    try:\n","        client.delete_collection(name=collection_name)\n","    except Exception:\n","        pass\n","    collection = client.create_collection(name=collection_name)\n","\n","    ids = [f\"chunk_{i}\" for i in range(len(chunks))]\n","    collection.add(ids=ids, embeddings=embeddings.tolist(), documents=chunks)\n","    return collection"],"metadata":{"id":"w8CKPBNz0dml","executionInfo":{"status":"ok","timestamp":1784944343747,"user_tz":-330,"elapsed":28,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}}},"execution_count":5,"outputs":[]},{"cell_type":"code","source":["# Step 4: Retrieval Function\n","def retrieve_top_k(query: str, embedder, collection, k: int = 2) -> list[str]:\n","    q_embed = embedder.encode([query]).tolist()\n","    res = collection.query(query_embeddings=q_embed, n_results=k)\n","    return res['documents'][0]"],"metadata":{"id":"_xsSmASo0iyI","executionInfo":{"status":"ok","timestamp":1784944343785,"user_tz":-330,"elapsed":33,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}}},"execution_count":6,"outputs":[]},{"cell_type":"code","source":["# Step 5: Grounded Generation Function\n","def generate_grounded_answer(query: str, chunks: list[str]) -> str:\n","    # Instantiate the GenerativeModel directly. genai.configure() handles the API key globally.\n","    model = genai.GenerativeModel('gemini-2.5-flash')\n","    context = \"\\n\\n---\\n\\n\".join(chunks)\n","    prompt = f\"\"\"Answer the question relying strictly on the context provided.\n","Do not use outside knowledge. If not found in context, say \"Data not available in documentation.\"\n","\n","CONTEXT:\n","{context}\n","\n","QUESTION:\n","{query}\n","\n","ANSWER:\"\"\"\n","\n","    response = model.generate_content(\n","        contents=prompt\n","    )\n","    return response.text.strip()"],"metadata":{"id":"y1ycybVh0oKc","executionInfo":{"status":"ok","timestamp":1784944343814,"user_tz":-330,"elapsed":58,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}}},"execution_count":7,"outputs":[]},{"cell_type":"code","source":["import google.generativeai as genai\n","\n","print(genai.__version__)"],"metadata":{"colab":{"base_uri":"https://localhost:8080/"},"id":"pw9-HGi74N8D","executionInfo":{"status":"ok","timestamp":1784944343820,"user_tz":-330,"elapsed":60,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}},"outputId":"6bf9ab81-aecb-4f9d-9b72-27b62544ac0a"},"execution_count":8,"outputs":[{"output_type":"stream","name":"stdout","text":["0.8.6\n"]}]},{"cell_type":"code","metadata":{"colab":{"base_uri":"https://localhost:8080/"},"id":"2938bae7","executionInfo":{"status":"ok","timestamp":1784944357119,"user_tz":-330,"elapsed":996,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}},"outputId":"4b0fa5ea-f2a9-42be-bbf1-4a9f6403dc4a"},"source":["from google.colab import userdata\n","import google.generativeai as genai\n","\n","try:\n","    # Attempt to retrieve the API key\n","    GOOGLE_API_KEY = userdata.get('API_KEY')\n","    if not GOOGLE_API_KEY:\n","        print(\"Warning: API_KEY secret was retrieved but is empty. Please ensure your API key is correctly entered in Colab Secrets.\")\n","    else:\n","        print(f\"API_KEY successfully retrieved from Colab Secrets: {'(present)' if GOOGLE_API_KEY else '(empty)'}\")\n","\n","    # Attempt to configure the Generative AI API\n","    genai.configure(api_key=GOOGLE_API_KEY)\n","    print(\"Generative AI API configured successfully.\")\n","\n","    # Attempt to list models, which requires a valid API key\n","    print(\"Available Generative AI models that support content generation:\")\n","    for model in genai.list_models():\n","        if 'generateContent' in model.supported_generation_methods:\n","            print(f\"- {model.name}\")\n","    print(\"Successfully listed Generative AI models. Your API key is working!\")\n","\n","except userdata.SecretNotFoundError:\n","    print(\"Error: Secret 'API_KEY' not found. Please ensure it's set in Colab Secrets and 'Notebook access' is enabled for this notebook.\")\n","except Exception as e:\n","    print(f\"An unexpected error occurred: {e}\")\n","    print(\"It's possible your API key is invalid or there's a configuration issue.\")"],"execution_count":10,"outputs":[{"output_type":"stream","name":"stdout","text":["Error: Secret 'API_KEY' not found. Please ensure it's set in Colab Secrets and 'Notebook access' is enabled for this notebook.\n"]}]},{"cell_type":"markdown","metadata":{"id":"e3078b6a"},"source":["As requested, here's a printout of the secrets currently available to this notebook via `userdata.list()`."]},{"cell_type":"code","metadata":{"colab":{"base_uri":"https://localhost:8080/"},"id":"142feb22","executionInfo":{"status":"ok","timestamp":1784944368495,"user_tz":-330,"elapsed":990,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}},"outputId":"29158c2c-cfb0-497b-dca1-5bf79a5a8d4d"},"source":["from google.colab import userdata\n","\n","try:\n","    # Replace 'YOUR_SECRET_NAME' with the actual name of your secret\n","    specific_secret_value = userdata.get('YOUR_SECRET_NAME')\n","    if specific_secret_value:\n","        print(f\"The value of 'YOUR_SECRET_NAME' is: {specific_secret_value}\")\n","    else:\n","        print(\"The secret 'YOUR_SECRET_NAME' was found, but its value is empty.\")\n","except userdata.SecretNotFoundError:\n","    print(\"Error: Secret 'YOUR_SECRET_NAME' not found. Please ensure it's set in Colab Secrets and 'Notebook access' is enabled for this notebook.\")\n","except Exception as e:\n","    print(f\"An unexpected error occurred: {e}\")"],"execution_count":11,"outputs":[{"output_type":"stream","name":"stdout","text":["Error: Secret 'YOUR_SECRET_NAME' not found. Please ensure it's set in Colab Secrets and 'Notebook access' is enabled for this notebook.\n"]}]},{"cell_type":"code","metadata":{"colab":{"base_uri":"https://localhost:8080/"},"id":"4dd7f19a","executionInfo":{"status":"ok","timestamp":1784944377653,"user_tz":-330,"elapsed":874,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}},"outputId":"f248ef11-4ed4-46f9-d532-2562d9c4de01"},"source":["from google.colab import userdata\n","\n","try:\n","    api_key_check = userdata.get('API_KEY')\n","    if api_key_check:\n","        print(f\"API_KEY successfully retrieved. Its value is: {'(present, but not displayed for security)'}\")\n","    else:\n","        print(\"API_KEY was retrieved, but it is empty. Please ensure your API key is correctly entered in Colab Secrets.\")\n","except userdata.SecretNotFoundError:\n","    print(\"Error: Secret 'API_KEY' not found. Please ensure it's set in Colab Secrets and 'Notebook access' is enabled for this notebook.\")\n","except Exception as e:\n","    print(f\"An unexpected error occurred: {e}\")"],"execution_count":12,"outputs":[{"output_type":"stream","name":"stdout","text":["Error: Secret 'API_KEY' not found. Please ensure it's set in Colab Secrets and 'Notebook access' is enabled for this notebook.\n"]}]},{"cell_type":"code","source":["# Run RAG Execution\n","if __name__ == \"__main__\":\n","    with open(\"data/knowledge_base.txt\", \"r\", encoding=\"utf-8\") as f:\n","        kb_data = f.read()\n","\n","    chunks = chunk_text(kb_data)\n","    embedder, embeddings = generate_embeddings(chunks)\n","    collection = build_vector_store(chunks, embeddings)\n","\n","    test_queries = [\n","        \"What is the user rating and review count for 'Photo Editor & Candy Camera'?\",\n","        \"Which age rating category does 'Coloring book moana' belong to?\",\n","        \"How many total installs does 'U Launcher Lite' have?\",\n","        \"What is the minimum Android version required for 'Sketch - Draw & Paint'?\",\n","        \"What is the price of paid apps in the Art and Design category?\"\n","    ]\n","\n","    print(\"\\n================ RAG EVALUATION TRANSCRIPT ================\\n\")\n","    for q in test_queries:\n","        print(f\"QUERY: {q}\")\n","        retrieved = retrieve_top_k(q, embedder, collection, k=2)\n","        print(f\"[Retrieved Chunk 1]: {retrieved[0][:180]}...\")\n","        ans = generate_grounded_answer(q, retrieved)\n","        print(f\"[Generated Answer]: {ans}\\n\" + \"-\"*50)"],"metadata":{"colab":{"base_uri":"https://localhost:8080/","height":211},"id":"z0vFqyPj43h5","executionInfo":{"status":"error","timestamp":1784944405289,"user_tz":-330,"elapsed":295,"user":{"displayName":"Pramod Jadhav","userId":"17035394471998039051"}},"outputId":"0aecb5b6-0194-42b6-fe15-c9f5e9ef5781"},"execution_count":15,"outputs":[{"output_type":"error","ename":"FileNotFoundError","evalue":"[Errno 2] No such file or directory: 'data/knowledge_base.txt'","traceback":["\u001b[0;31m---------------------------------------------------------------------------\u001b[0m","\u001b[0;31mFileNotFoundError\u001b[0m                         Traceback (most recent call last)","\u001b[0;32m/tmp/ipykernel_2274/2259994146.py\u001b[0m in \u001b[0;36m<cell line: 0>\u001b[0;34m()\u001b[0m\n\u001b[1;32m      1\u001b[0m \u001b[0;31m# Run RAG Execution\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      2\u001b[0m \u001b[0;32mif\u001b[0m \u001b[0m__name__\u001b[0m \u001b[0;34m==\u001b[0m \u001b[0;34m\"__main__\"\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m----> 3\u001b[0;31m     \u001b[0;32mwith\u001b[0m \u001b[0mopen\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m\"data/knowledge_base.txt\"\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m\"r\"\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mencoding\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0;34m\"utf-8\"\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;32mas\u001b[0m \u001b[0mf\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m      4\u001b[0m         \u001b[0mkb_data\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mf\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mread\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      5\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n","\u001b[0;31mFileNotFoundError\u001b[0m: [Errno 2] No such file or directory: 'data/knowledge_base.txt'"]}]}],"metadata":{"colab":{"provenance":[{"file_id":"/v2/external/notebooks/intro.ipynb","timestamp":1784944196635}]},"kernelspec":{"display_name":"Python 3","name":"python3"}},"nbformat":4,"nbformat_minor":0}
+# src/rag_pipeline.py
+
+from pathlib import Path
+import os
+
+import chromadb
+from sentence_transformers import SentenceTransformer
+from dotenv import load_dotenv
+from google import genai
+
+load_dotenv()
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+KNOWLEDGE_BASE_PATH = (
+    BASE_DIR / "data" / "knowledge_base.txt"
+)
+
+EMBEDDING_MODEL_NAME = (
+    "sentence-transformers/all-MiniLM-L6-v2"
+)
+
+COLLECTION_NAME = "technical_knowledge"
+
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 50
+
+TOP_K = 5
+
+GEMINI_MODEL = "gemini-2.5-flash"
+
+
+# ============================================================
+# GEMINI CLIENT
+# ============================================================
+
+def get_gemini_client():
+
+    api_key = os.getenv("GEMINI_API_KEY")
+
+    if not api_key:
+        raise ValueError(
+            "GEMINI_API_KEY is not configured. "
+            "Add it to your .env file or Streamlit Secrets."
+        )
+
+    return genai.Client(
+        api_key=api_key
+    )
+
+
+# ============================================================
+# EMBEDDING MODEL
+# ============================================================
+
+def load_embedding_model():
+
+    return SentenceTransformer(
+        EMBEDDING_MODEL_NAME
+    )
+
+
+# ============================================================
+# LOAD KNOWLEDGE BASE
+# ============================================================
+
+def load_knowledge_base():
+
+    if not KNOWLEDGE_BASE_PATH.exists():
+
+        raise FileNotFoundError(
+            f"Knowledge base not found: "
+            f"{KNOWLEDGE_BASE_PATH}"
+        )
+
+    return KNOWLEDGE_BASE_PATH.read_text(
+        encoding="utf-8"
+    )
+
+
+# ============================================================
+# TEXT CHUNKING
+# ============================================================
+
+def chunk_text(
+    text: str,
+    chunk_size: int = CHUNK_SIZE,
+    overlap: int = CHUNK_OVERLAP,
+):
+
+    words = text.split()
+
+    chunks = []
+
+    start = 0
+
+    while start < len(words):
+
+        end = start + chunk_size
+
+        chunk = " ".join(
+            words[start:end]
+        )
+
+        if chunk.strip():
+
+            chunks.append(chunk)
+
+        start = end - overlap
+
+        if start < 0:
+            start = 0
+
+    return chunks
+
+
+# ============================================================
+# CHROMADB
+# ============================================================
+
+def create_vector_store(
+    chunks,
+    embedding_model,
+):
+
+    client = chromadb.Client()
+
+    # Delete old collection if it exists
+    try:
+
+        client.delete_collection(
+            name=COLLECTION_NAME
+        )
+
+    except Exception:
+        pass
+
+    collection = client.create_collection(
+        name=COLLECTION_NAME
+    )
+
+    embeddings = embedding_model.encode(
+        chunks,
+        normalize_embeddings=True,
+    ).tolist()
+
+    ids = [
+        f"chunk-{index}"
+        for index in range(len(chunks))
+    ]
+
+    collection.add(
+        ids=ids,
+        documents=chunks,
+        embeddings=embeddings,
+    )
+
+    return client, collection
+
+
+# ============================================================
+# BUILD RAG INDEX
+# ============================================================
+
+def build_rag_index():
+
+    text = load_knowledge_base()
+
+    chunks = chunk_text(text)
+
+    embedding_model = load_embedding_model()
+
+    client, collection = create_vector_store(
+        chunks,
+        embedding_model,
+    )
+
+    return (
+        client,
+        collection,
+        embedding_model,
+    )
+
+
+# ============================================================
+# RETRIEVAL
+# ============================================================
+
+def retrieve_documents(
+    query: str,
+    collection,
+    embedding_model,
+    top_k: int = TOP_K,
+):
+
+    query_embedding = embedding_model.encode(
+        [query],
+        normalize_embeddings=True,
+    )[0].tolist()
+
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=top_k,
+    )
+
+    documents = results.get(
+        "documents",
+        [[]],
+    )[0]
+
+    distances = results.get(
+        "distances",
+        [[]],
+    )[0]
+
+    return documents, distances
+
+
+# ============================================================
+# PROMPT BUILDING
+# ============================================================
+
+def build_prompt(
+    query: str,
+    documents,
+):
+
+    context = "\n\n".join(
+        [
+            f"[Source {index + 1}]\n{document}"
+            for index, document
+            in enumerate(documents)
+        ]
+    )
+
+    return f"""
+You are an internal technical knowledge assistant.
+
+Answer the user's question using ONLY the
+provided knowledge-base context.
+
+Do not invent information.
+
+If the answer cannot be found in the
+provided context, clearly state:
+
+"I could not find sufficient information
+in the knowledge base."
+
+Always provide a concise and technically
+accurate answer.
+
+User Question:
+{query}
+
+Knowledge Base Context:
+{context}
+"""
+
+
+# ============================================================
+# RAG QUESTION ANSWERING
+# ============================================================
+
+def answer_question(
+    query: str,
+    collection=None,
+    embedding_model=None,
+):
+
+    if not query.strip():
+
+        raise ValueError(
+            "Query cannot be empty."
+        )
+
+    # Build index automatically if not supplied
+    if collection is None or embedding_model is None:
+
+        (
+            _,
+            collection,
+            embedding_model,
+        ) = build_rag_index()
+
+    documents, distances = retrieve_documents(
+        query=query,
+        collection=collection,
+        embedding_model=embedding_model,
+    )
+
+    if not documents:
+
+        return {
+            "answer": (
+                "I could not find relevant "
+                "information in the knowledge base."
+            ),
+            "sources": [],
+            "distances": [],
+        }
+
+    prompt = build_prompt(
+        query,
+        documents,
+    )
+
+    gemini_client = get_gemini_client()
+
+    response = gemini_client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+    )
+
+    answer = response.text.strip()
+
+    sources = [
+        {
+            "source": f"Knowledge Base Chunk {index + 1}",
+            "content": document,
+            "distance": float(
+                distances[index]
+            )
+            if index < len(distances)
+            else None,
+        }
+        for index, document
+        in enumerate(documents)
+    ]
+
+    return {
+        "answer": answer,
+        "sources": sources,
+        "distances": distances,
+    }
+
+
+# ============================================================
+# SIMPLE TEST
+# ============================================================
+
+if __name__ == "__main__":
+
+    result = answer_question(
+        "How should a critical security incident be handled?"
+    )
+
+    print("\nANSWER:")
+    print(result["answer"])
+
+    print("\nSOURCES:")
+
+    for source in result["sources"]:
+
+        print(
+            f"\n{source['source']}"
+        )
+
+        print(
+            source["content"]
+  )
