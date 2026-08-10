@@ -1,9 +1,50 @@
-# app.py
+"""
+Production-style Streamlit application
+LLM-Powered Structured Insight & RAG Retrieval Pipeline
+
+Features
+--------
+1. Structured support-ticket extraction using Gemini + Pydantic
+2. RAG-based question answering using:
+   - Sentence Transformers
+   - ChromaDB
+   - Gemini
+3. Top-K retrieved chunks
+4. Similarity / relevance scores
+5. Grounded answer with source context
+6. Graceful error handling
+"""
+
+from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
+from dotenv import load_dotenv
+
+
+# ============================================================
+# APPLICATION CONFIGURATION
+# ============================================================
+
+load_dotenv()
+
+BASE_DIR = Path(__file__).resolve().parent
+
+DATA_DIR = BASE_DIR / "data"
+SRC_DIR = BASE_DIR / "src"
+
+TICKETS_FILE = DATA_DIR / "support_tickets.json"
+KNOWLEDGE_BASE_FILE = DATA_DIR / "knowledge_base.txt"
+
+APP_TITLE = "LLM-Powered Structured Insight & RAG"
+APP_ICON = "🧠"
+
+DEFAULT_TOP_K = 5
+MAX_TOP_K = 10
 
 
 # ============================================================
@@ -11,19 +52,11 @@ import streamlit as st
 # ============================================================
 
 st.set_page_config(
-    page_title="LLM Structured Insight & RAG",
-    page_icon="🧠",
+    page_title=APP_TITLE,
+    page_icon=APP_ICON,
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-
-# ============================================================
-# PATHS
-# ============================================================
-
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
 
 
 # ============================================================
@@ -34,35 +67,43 @@ st.markdown(
     """
     <style>
         .main-title {
-            font-size: 2.4rem;
+            font-size: 2.2rem;
             font-weight: 700;
             margin-bottom: 0.2rem;
         }
 
         .subtitle {
             color: #6b7280;
-            font-size: 1.05rem;
+            font-size: 1rem;
             margin-bottom: 1.5rem;
         }
 
-        .metric-card {
-            padding: 1rem;
+        .source-card {
+            border: 1px solid #d1d5db;
             border-radius: 10px;
-            border: 1px solid rgba(128,128,128,0.25);
+            padding: 1rem;
+            margin-bottom: 0.8rem;
         }
 
-        .success-box {
-            padding: 1rem;
-            border-radius: 8px;
-            background-color: rgba(34, 197, 94, 0.10);
-            border: 1px solid rgba(34, 197, 94, 0.30);
+        .score {
+            font-weight: 700;
         }
 
-        .error-box {
+        .grounded-answer {
+            border-left: 4px solid #2563eb;
             padding: 1rem;
-            border-radius: 8px;
-            background-color: rgba(239, 68, 68, 0.10);
-            border: 1px solid rgba(239, 68, 68, 0.30);
+            background: #f8fafc;
+            border-radius: 6px;
+        }
+
+        .status-success {
+            color: #15803d;
+            font-weight: 600;
+        }
+
+        .status-warning {
+            color: #b45309;
+            font-weight: 600;
         }
     </style>
     """,
@@ -71,607 +112,722 @@ st.markdown(
 
 
 # ============================================================
-# SAFE IMPORTS
+# HELPER FUNCTIONS
 # ============================================================
 
-@st.cache_resource
-def load_pipeline_modules():
+def get_api_key() -> str | None:
     """
-    Import pipeline modules lazily so the dashboard can display
-    a useful error instead of crashing during startup.
+    Retrieve Gemini API key.
+
+    Priority:
+    1. Streamlit secrets
+    2. Environment variable
+    """
+
+    # Streamlit Cloud / local secrets.toml
+    try:
+        key = st.secrets.get("GEMINI_API_KEY")
+        if key:
+            return str(key).strip()
+    except Exception:
+        pass
+
+    # Environment variable
+    key = os.getenv("GEMINI_API_KEY")
+
+    if key:
+        return key.strip()
+
+    # Backward-compatible environment variable
+    key = os.getenv("GOOGLE_API_KEY")
+
+    if key:
+        return key.strip()
+
+    return None
+
+
+def load_ticket_data() -> list[dict[str, Any]]:
+    """Load support-ticket records safely."""
+
+    if not TICKETS_FILE.exists():
+        return []
+
+    try:
+        with open(TICKETS_FILE, "r", encoding="utf-8") as file:
+            data = json.load(file)
+
+        if isinstance(data, list):
+            return data
+
+        return []
+
+    except Exception as exc:
+        st.error(f"Unable to load support tickets: {exc}")
+        return []
+
+
+def validate_project_structure() -> list[str]:
+    """Check important project files."""
+
+    missing = []
+
+    required_files = [
+        TICKETS_FILE,
+        KNOWLEDGE_BASE_FILE,
+        SRC_DIR / "__init__.py",
+        SRC_DIR / "schemas.py",
+        SRC_DIR / "extraction_pipeline.py",
+        SRC_DIR / "rag_pipeline.py",
+    ]
+
+    for file_path in required_files:
+        if not file_path.exists():
+            missing.append(str(file_path.relative_to(BASE_DIR)))
+
+    return missing
+
+
+# ============================================================
+# IMPORT PIPELINES
+# ============================================================
+
+@st.cache_resource(show_spinner=False)
+def load_pipelines():
+    """
+    Import application pipelines.
+
+    Expected functions:
+
+    extraction_pipeline.py
+        extract_ticket(...)
+
+    rag_pipeline.py
+        initialize_rag(...)
+        retrieve_context(...)
+        generate_grounded_answer(...)
     """
 
     try:
-        from src.schemas import ExtractedSupportTicket
+        from src.extraction_pipeline import extract_ticket
+        from src.rag_pipeline import (
+            initialize_rag,
+            retrieve_context,
+            generate_grounded_answer,
+        )
 
         return {
-            "schema": ExtractedSupportTicket,
-            "extraction": __import__(
-                "src.extraction_pipeline",
-                fromlist=["*"],
-            ),
-            "rag": __import__(
-                "src.rag_pipeline",
-                fromlist=["*"],
-            ),
-            "error": None,
+            "extract_ticket": extract_ticket,
+            "initialize_rag": initialize_rag,
+            "retrieve_context": retrieve_context,
+            "generate_grounded_answer": generate_grounded_answer,
         }
 
     except Exception as exc:
-        return {
-            "schema": None,
-            "extraction": None,
-            "rag": None,
-            "error": str(exc),
+        raise RuntimeError(
+            f"Unable to load application pipelines: {exc}"
+        ) from exc
+
+
+# ============================================================
+# RAG INITIALIZATION
+# ============================================================
+
+@st.cache_resource(show_spinner="Loading embedding model and ChromaDB...")
+def initialize_rag_system(_initialize_rag):
+    """
+    Initialize RAG system once per Streamlit process.
+    """
+
+    try:
+        return _initialize_rag(
+            knowledge_base_path=str(KNOWLEDGE_BASE_FILE)
+        )
+
+    except TypeError:
+        # Fallback for simpler implementations
+        return _initialize_rag(str(KNOWLEDGE_BASE_FILE))
+
+    except Exception as exc:
+        raise RuntimeError(
+            f"Unable to initialize RAG system: {exc}"
+        ) from exc
+
+
+# ============================================================
+# RAG RETRIEVAL NORMALIZER
+# ============================================================
+
+def normalize_retrieved_chunks(results: Any) -> list[dict[str, Any]]:
+    """
+    Normalize different possible retrieval outputs.
+
+    Supported formats:
+
+    [
+        {
+            "text": "...",
+            "score": 0.91,
+            "source": "knowledge_base.txt"
         }
+    ]
+
+    or Chroma-like results.
+    """
+
+    normalized: list[dict[str, Any]] = []
+
+    if results is None:
+        return normalized
+
+    # --------------------------------------------------------
+    # Already normalized list
+    # --------------------------------------------------------
+
+    if isinstance(results, list):
+
+        for index, item in enumerate(results):
+
+            if isinstance(item, dict):
+
+                text = (
+                    item.get("text")
+                    or item.get("document")
+                    or item.get("content")
+                    or ""
+                )
+
+                score = (
+                    item.get("score")
+                    or item.get("similarity")
+                    or item.get("relevance_score")
+                )
+
+                source = (
+                    item.get("source")
+                    or item.get("metadata", {}).get("source")
+                    or "knowledge_base.txt"
+                )
+
+                normalized.append(
+                    {
+                        "rank": index + 1,
+                        "text": str(text),
+                        "score": score,
+                        "source": source,
+                        "metadata": item.get("metadata", {}),
+                    }
+                )
+
+            else:
+                normalized.append(
+                    {
+                        "rank": index + 1,
+                        "text": str(item),
+                        "score": None,
+                        "source": "knowledge_base.txt",
+                        "metadata": {},
+                    }
+                )
+
+        return normalized
+
+    # --------------------------------------------------------
+    # Chroma-style result
+    # --------------------------------------------------------
+
+    if isinstance(results, dict):
+
+        documents = results.get("documents", [[]])
+        metadatas = results.get("metadatas", [[]])
+        distances = results.get("distances", [[]])
+
+        documents = documents[0] if documents else []
+        metadatas = metadatas[0] if metadatas else []
+        distances = distances[0] if distances else []
+
+        for index, document in enumerate(documents):
+
+            metadata = (
+                metadatas[index]
+                if index < len(metadatas)
+                else {}
+            )
+
+            distance = (
+                distances[index]
+                if index < len(distances)
+                else None
+            )
+
+            # Chroma distance is lower = more similar.
+            # Convert distance into an intuitive relevance score.
+            relevance = None
+
+            if distance is not None:
+                try:
+                    relevance = 1 / (1 + float(distance))
+                except (TypeError, ValueError):
+                    relevance = None
+
+            normalized.append(
+                {
+                    "rank": index + 1,
+                    "text": str(document),
+                    "score": relevance,
+                    "source": metadata.get(
+                        "source",
+                        "knowledge_base.txt",
+                    ),
+                    "metadata": metadata,
+                }
+            )
+
+        return normalized
+
+    return normalized
 
 
-modules = load_pipeline_modules()
+# ============================================================
+# SCORE DISPLAY
+# ============================================================
+
+def format_score(score: Any) -> str:
+    """Format relevance score."""
+
+    if score is None:
+        return "N/A"
+
+    try:
+        return f"{float(score):.4f}"
+    except (TypeError, ValueError):
+        return str(score)
 
 
 # ============================================================
 # SIDEBAR
 # ============================================================
 
-with st.sidebar:
+def render_sidebar():
 
-    st.title("🧠 AI Assistant")
+    st.sidebar.title("🧠 RAG Control Panel")
 
-    st.caption("LLM-Powered Structured Insight & RAG")
+    st.sidebar.markdown("---")
 
-    st.divider()
-
-    page = st.radio(
-        "Navigation",
+    mode = st.sidebar.radio(
+        "Select Mode",
         [
-            "🏠 Home",
-            "🎫 Ticket Extraction",
             "🔎 RAG Q&A",
-            "📚 Knowledge Base",
-            "🧪 Schema Validation",
-            "ℹ️ About",
+            "🎫 Ticket Extraction",
+            "📊 System Status",
         ],
     )
 
-    st.divider()
+    st.sidebar.markdown("---")
 
-    st.markdown("### Technology")
+    st.sidebar.subheader("Retrieval Settings")
 
-    st.markdown(
-        """
-        - **Gemini 2.5 Flash**
-        - **Pydantic v2**
-        - **Sentence Transformers**
-        - **ChromaDB**
-        - **Streamlit**
-        """
+    top_k = st.sidebar.slider(
+        "Top-K Documents",
+        min_value=1,
+        max_value=MAX_TOP_K,
+        value=DEFAULT_TOP_K,
+        step=1,
     )
 
+    st.sidebar.caption(
+        "Higher Top-K retrieves more context but may increase "
+        "prompt size."
+    )
+
+    st.sidebar.markdown("---")
+
+    api_key = get_api_key()
+
+    if api_key:
+        st.sidebar.success("Gemini API Key: Configured")
+    else:
+        st.sidebar.error("Gemini API Key: Missing")
+
+    st.sidebar.markdown("---")
+
+    st.sidebar.caption(
+        "Embedding Model\n"
+        "`all-MiniLM-L6-v2`"
+    )
+
+    st.sidebar.caption(
+        "Vector Database\n"
+        "`ChromaDB`"
+    )
+
+    st.sidebar.caption(
+        "LLM\n"
+        "`Gemini`"
+    )
+
+    return mode, top_k
+
 
 # ============================================================
-# HEADER
+# RAG Q&A PAGE
 # ============================================================
 
-def render_header():
+def render_rag_page(pipelines, top_k: int):
+
     st.markdown(
-        '<div class="main-title">🧠 LLM-Powered Structured Insight & RAG</div>',
+        '<div class="main-title">🔎 RAG Knowledge Assistant</div>',
         unsafe_allow_html=True,
     )
 
     st.markdown(
         '<div class="subtitle">'
-        "Structured support-ticket extraction + grounded technical Q&A"
+        "Ask questions about the internal technical knowledge base. "
+        "Answers are generated using retrieved source context."
         "</div>",
         unsafe_allow_html=True,
     )
 
-
-# ============================================================
-# HOME
-# ============================================================
-
-if page == "🏠 Home":
-
-    render_header()
-
-    st.info(
-        "This application combines Pydantic-validated structured "
-        "LLM extraction with a local Retrieval-Augmented Generation "
-        "(RAG) pipeline."
+    query = st.text_area(
+        "Enter your question",
+        placeholder=(
+            "Example: How should a critical security incident "
+            "be escalated?"
+        ),
+        height=120,
     )
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns([1, 5])
 
     with col1:
-        st.metric("LLM", "Gemini 2.5 Flash")
+        search_clicked = st.button(
+            "🔍 Search",
+            type="primary",
+            use_container_width=True,
+        )
 
-    with col2:
-        st.metric("Embeddings", "MiniLM-L6-v2")
+    if not search_clicked:
+        st.info(
+            "Enter a question and click Search to run the RAG pipeline."
+        )
+        return
 
-    with col3:
-        st.metric("Vector DB", "ChromaDB")
+    if not query.strip():
+        st.warning("Please enter a question.")
+        return
 
-    with col4:
-        st.metric("Validation", "Pydantic v2")
+    if not get_api_key():
+        st.error(
+            "Gemini API key is not configured. "
+            "Add GEMINI_API_KEY to Streamlit Secrets or environment variables."
+        )
+        return
 
-    st.divider()
+    # --------------------------------------------------------
+    # Initialize RAG
+    # --------------------------------------------------------
 
-    st.subheader("🚀 Pipeline")
+    with st.spinner("Initializing RAG system..."):
 
-    steps = [
-        ("1", "Raw Support Ticket", "Unstructured customer text"),
-        ("2", "LLM Extraction", "Gemini extracts structured fields"),
-        ("3", "Pydantic Validation", "Schema + enum enforcement"),
-        ("4", "RAG Retrieval", "Relevant technical context"),
-        ("5", "Grounded Answer", "Source-backed response"),
-    ]
+        try:
+            rag_system = initialize_rag_system(
+                pipelines["initialize_rag"]
+            )
 
-    for number, title, description in steps:
-        c1, c2, c3 = st.columns([1, 3, 6])
+        except Exception as exc:
+            st.error(str(exc))
+            return
 
-        with c1:
-            st.markdown(f"### {number}")
+    # --------------------------------------------------------
+    # Retrieval
+    # --------------------------------------------------------
 
-        with c2:
-            st.markdown(f"**{title}**")
+    with st.spinner("Searching knowledge base..."):
 
-        with c3:
-            st.write(description)
+        try:
+            raw_results = pipelines["retrieve_context"](
+                rag_system,
+                query,
+                top_k=top_k,
+            )
 
+        except TypeError:
 
-# ============================================================
-# TICKET EXTRACTION
-# ============================================================
+            try:
+                raw_results = pipelines["retrieve_context"](
+                    rag_system,
+                    query,
+                    top_k,
+                )
 
-elif page == "🎫 Ticket Extraction":
+            except Exception as exc:
+                st.error(
+                    f"RAG retrieval failed: {exc}"
+                )
+                return
 
-    render_header()
+        except Exception as exc:
+            st.error(
+                f"RAG retrieval failed: {exc}"
+            )
+            return
 
-    st.subheader("🎫 Structured Support Ticket Extraction")
-
-    st.write(
-        "Enter an unstructured support ticket and extract a "
-        "validated structured representation."
+    retrieved_chunks = normalize_retrieved_chunks(
+        raw_results
     )
 
-    default_ticket = (
-        "I was charged twice for my monthly subscription. "
-        "I only purchased the plan once and would like one of "
-        "the charges refunded. This is very frustrating."
+    if not retrieved_chunks:
+        st.warning(
+            "No relevant documents were retrieved."
+        )
+        return
+
+    # --------------------------------------------------------
+    # Metrics
+    # --------------------------------------------------------
+
+    st.subheader("📊 Retrieval Summary")
+
+    metric1, metric2, metric3 = st.columns(3)
+
+    metric1.metric(
+        "Documents Retrieved",
+        len(retrieved_chunks),
+    )
+
+    valid_scores = [
+        item["score"]
+        for item in retrieved_chunks
+        if item["score"] is not None
+    ]
+
+    if valid_scores:
+        metric2.metric(
+            "Best Relevance",
+            f"{max(valid_scores):.4f}",
+        )
+
+        metric3.metric(
+            "Average Relevance",
+            f"{sum(valid_scores) / len(valid_scores):.4f}",
+        )
+
+    else:
+        metric2.metric(
+            "Best Relevance",
+            "N/A",
+        )
+
+        metric3.metric(
+            "Average Relevance",
+            "N/A",
+        )
+
+    # --------------------------------------------------------
+    # Retrieved Sources
+    # --------------------------------------------------------
+
+    st.markdown("---")
+
+    st.subheader(
+        f"📚 Top-{len(retrieved_chunks)} Retrieved Sources"
+    )
+
+    for item in retrieved_chunks:
+
+        rank = item["rank"]
+        score = item["score"]
+        source = item["source"]
+        text = item["text"]
+        metadata = item.get("metadata", {})
+
+        with st.expander(
+            f"#{rank} — {source} — Relevance: {format_score(score)}",
+            expanded=(rank == 1),
+        ):
+
+            source_col, score_col = st.columns(2)
+
+            with source_col:
+                st.markdown("**Source**")
+                st.code(str(source))
+
+            with score_col:
+                st.markdown("**Similarity / Relevance Score**")
+                st.code(format_score(score))
+
+            st.markdown("**Retrieved Chunk**")
+
+            st.markdown(
+                f"""
+                <div class="source-card">
+                    {text}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            if metadata:
+                st.markdown("**Metadata**")
+                st.json(metadata)
+
+    # --------------------------------------------------------
+    # Build Context
+    # --------------------------------------------------------
+
+    context_parts = []
+
+    for item in retrieved_chunks:
+
+        context_parts.append(
+            f"""
+SOURCE: {item['source']}
+RELEVANCE: {format_score(item['score'])}
+
+{item['text']}
+"""
+        )
+
+    context = "\n\n---\n\n".join(context_parts)
+
+    # --------------------------------------------------------
+    # Grounded Answer
+    # --------------------------------------------------------
+
+    st.markdown("---")
+
+    st.subheader("🤖 Grounded Answer")
+
+    with st.spinner(
+        "Generating grounded answer from retrieved context..."
+    ):
+
+        try:
+
+            answer = pipelines["generate_grounded_answer"](
+                query=query,
+                context=context,
+            )
+
+        except TypeError:
+
+            try:
+                answer = pipelines[
+                    "generate_grounded_answer"
+                ](
+                    query,
+                    context,
+                )
+
+            except Exception as exc:
+                st.error(
+                    f"Answer generation failed: {exc}"
+                )
+                return
+
+        except Exception as exc:
+            st.error(
+                f"Answer generation failed: {exc}"
+            )
+            return
+
+    if isinstance(answer, dict):
+        answer_text = (
+            answer.get("answer")
+            or answer.get("response")
+            or answer.get("text")
+            or str(answer)
+        )
+    else:
+        answer_text = str(answer)
+
+    st.markdown(
+        f"""
+        <div class="grounded-answer">
+        {answer_text}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # --------------------------------------------------------
+    # Grounding Information
+    # --------------------------------------------------------
+
+    st.markdown("---")
+
+    st.subheader("🔗 Answer Grounding")
+
+    st.success(
+        f"The answer was generated using "
+        f"{len(retrieved_chunks)} retrieved knowledge-base chunk(s)."
+    )
+
+    source_names = list(
+        dict.fromkeys(
+            str(item["source"])
+            for item in retrieved_chunks
+        )
+    )
+
+    st.markdown("**Sources used:**")
+
+    for source in source_names:
+        st.markdown(f"- `{source}`")
+
+    st.caption(
+        "The assistant is instructed to ground responses in "
+        "retrieved internal documentation. Always verify critical "
+        "operational decisions against authoritative procedures."
+    )
+
+
+# ============================================================
+# TICKET EXTRACTION PAGE
+# ============================================================
+
+def render_extraction_page(pipelines):
+
+    st.markdown(
+        '<div class="main-title">'
+        "🎫 Structured Support Ticket Extraction"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="subtitle">'
+        "Convert unstructured support tickets into "
+        "Pydantic-validated structured records."
+        "</div>",
+        unsafe_allow_html=True,
     )
 
     ticket_text = st.text_area(
         "Support Ticket",
-        value=default_ticket,
+        placeholder=(
+            "Example:\n"
+            "I was charged twice for my subscription and "
+            "need one of the charges refunded immediately."
+        ),
         height=180,
-        placeholder="Enter support ticket text...",
     )
 
     if st.button(
-        "🚀 Extract & Validate",
+        "⚙️ Extract & Validate",
         type="primary",
-        use_container_width=True,
     ):
 
         if not ticket_text.strip():
             st.warning("Please enter a support ticket.")
-            st.stop()
+            return
 
-        if modules["error"]:
+        if not get_api_key():
             st.error(
-                "Unable to load the extraction pipeline.\n\n"
-                f"{modules['error']}"
+                "Gemini API key is not configured."
             )
-            st.stop()
-
-        extraction_module = modules["extraction"]
-
-        try:
-
-            # Try commonly used function names.
-            extraction_function = None
-
-            for function_name in [
-                "extract_support_ticket",
-                "extract_ticket",
-                "extract_structured_ticket",
-                "run_extraction",
-            ]:
-
-                if hasattr(extraction_module, function_name):
-                    extraction_function = getattr(
-                        extraction_module,
-                        function_name,
-                    )
-                    break
-
-            if extraction_function is None:
-
-                st.error(
-                    "No supported extraction function was found in "
-                    "`src/extraction_pipeline.py`.\n\n"
-                    "Expected one of:\n"
-                    "- extract_support_ticket\n"
-                    "- extract_ticket\n"
-                    "- extract_structured_ticket\n"
-                    "- run_extraction"
-                )
-
-                st.stop()
-
-            with st.spinner("Analyzing ticket with Gemini..."):
-
-                result = extraction_function(ticket_text)
-
-            st.success("Ticket successfully extracted and validated.")
-
-            st.subheader("📋 Structured Output")
-
-            if hasattr(result, "model_dump"):
-
-                result_dict = result.model_dump()
-
-            elif isinstance(result, dict):
-
-                result_dict = result
-
-            else:
-
-                result_dict = {
-                    "result": str(result)
-                }
-
-            st.json(result_dict)
-
-            st.subheader("📊 Extracted Fields")
-
-            if isinstance(result_dict, dict):
-
-                columns = st.columns(
-                    max(1, min(len(result_dict), 4))
-                )
-
-                for index, (key, value) in enumerate(
-                    result_dict.items()
-                ):
-
-                    with columns[index % len(columns)]:
-
-                        st.metric(
-                            key.replace("_", " ").title(),
-                            str(value),
-                        )
-
-        except Exception as exc:
-
-            st.error(
-                "❌ Extraction failed.\n\n"
-                f"{type(exc).__name__}: {exc}"
-            )
-
-
-# ============================================================
-# RAG Q&A
-# ============================================================
-
-elif page == "🔎 RAG Q&A":
-
-    render_header()
-
-    st.subheader("🔎 Technical Knowledge Assistant")
-
-    st.write(
-        "Ask a question about the internal technical documentation. "
-        "The system retrieves relevant chunks before generating an answer."
-    )
-
-    query = st.text_area(
-        "Your Question",
-        height=120,
-        placeholder="Example: How should a high-priority incident be escalated?",
-    )
-
-    if st.button(
-        "🔍 Search Knowledge Base",
-        type="primary",
-        use_container_width=True,
-    ):
-
-        if not query.strip():
-            st.warning("Please enter a question.")
-            st.stop()
-
-        if modules["error"]:
-            st.error(
-                "Unable to load the RAG pipeline.\n\n"
-                f"{modules['error']}"
-            )
-            st.stop()
-
-        rag_module = modules["rag"]
-
-        try:
-
-            rag_function = None
-
-            for function_name in [
-                "answer_question",
-                "query_rag",
-                "rag_query",
-                "ask_question",
-                "run_rag",
-            ]:
-
-                if hasattr(rag_module, function_name):
-                    rag_function = getattr(
-                        rag_module,
-                        function_name,
-                    )
-                    break
-
-            if rag_function is None:
-
-                st.error(
-                    "No supported RAG function was found in "
-                    "`src/rag_pipeline.py`.\n\n"
-                    "Expected one of:\n"
-                    "- answer_question\n"
-                    "- query_rag\n"
-                    "- rag_query\n"
-                    "- ask_question\n"
-                    "- run_rag"
-                )
-
-                st.stop()
-
-            with st.spinner(
-                "Retrieving relevant documentation and generating answer..."
-            ):
-
-                result = rag_function(query)
-
-            st.success("Answer generated successfully.")
-
-            st.subheader("💡 Answer")
-
-            if isinstance(result, dict):
-
-                answer = (
-                    result.get("answer")
-                    or result.get("response")
-                    or result.get("result")
-                )
-
-                if answer:
-
-                    st.write(answer)
-
-                else:
-
-                    st.json(result)
-
-            else:
-
-                st.write(result)
-
-        except Exception as exc:
-
-            st.error(
-                "❌ RAG query failed.\n\n"
-                f"{type(exc).__name__}: {exc}"
-            )
-
-
-# ============================================================
-# KNOWLEDGE BASE
-# ============================================================
-
-elif page == "📚 Knowledge Base":
-
-    render_header()
-
-    st.subheader("📚 Internal Knowledge Base")
-
-    knowledge_file = DATA_DIR / "knowledge_base.txt"
-
-    if not knowledge_file.exists():
-
-        st.warning(
-            "`data/knowledge_base.txt` was not found."
-        )
-
-    else:
-
-        try:
-
-            text = knowledge_file.read_text(
-                encoding="utf-8"
-            )
-
-            words = len(text.split())
-            characters = len(text)
-
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                st.metric("Words", f"{words:,}")
-
-            with col2:
-                st.metric("Characters", f"{characters:,}")
-
-            with col3:
-                st.metric(
-                    "File",
-                    "knowledge_base.txt",
-                )
-
-            st.divider()
-
-            with st.expander(
-                "📖 Preview Knowledge Base"
-            ):
-
-                st.text_area(
-                    "Content",
-                    text[:10000],
-                    height=500,
-                )
-
-        except Exception as exc:
-
-            st.error(
-                f"Unable to read knowledge base: {exc}"
-            )
-
-
-# ============================================================
-# SCHEMA VALIDATION
-# ============================================================
-
-elif page == "🧪 Schema Validation":
-
-    render_header()
-
-    st.subheader("🧪 Pydantic Schema Validation")
-
-    st.write(
-        "Test whether structured ticket data satisfies the "
-        "`ExtractedSupportTicket` schema."
-    )
-
-    default_json = {
-        "ticket_id": "TCK-INVALID-01",
-        "category": "Billing",
-        "urgency": "SUPER_URGENT",
-        "sentiment": "Negative",
-        "one_line_summary": "User wants a refund.",
-    }
-
-    json_input = st.text_area(
-        "JSON Payload",
-        value=json.dumps(
-            default_json,
-            indent=2,
-        ),
-        height=250,
-    )
-
-    if st.button(
-        "🧪 Validate JSON",
-        type="primary",
-        use_container_width=True,
-    ):
-
-        if modules["schema"] is None:
-
-            st.error(
-                "Unable to load `ExtractedSupportTicket`."
-            )
-
-            st.stop()
-
-        try:
-
-            payload = json.loads(json_input)
-
-        except json.JSONDecodeError as exc:
-
-            st.error(
-                f"Invalid JSON: {exc}"
-            )
-
-            st.stop()
-
-        try:
-
-            schema = modules["schema"]
-
-            validated = schema.model_validate(payload)
-
-            st.success(
-                "✅ Validation successful. "
-                "The payload conforms to the schema."
-            )
-
-            st.json(
-                validated.model_dump()
-            )
-
-        except Exception as exc:
-
-            st.error(
-                "❌ Validation failed."
-            )
-
-            st.code(
-                str(exc),
-                language="text",
-            )
-
-
-# ============================================================
-# ABOUT
-# ============================================================
-
-elif page == "ℹ️ About":
-
-    render_header()
-
-    st.subheader("ℹ️ About This Project")
-
-    st.markdown(
-        """
-        ### 🧠 LLM-Powered Structured Insight & RAG Retrieval Pipeline
-
-        This project demonstrates a production-oriented NLP workflow
-        combining:
-
-        - Structured extraction using an LLM
-        - Pydantic runtime validation
-        - Semantic embeddings
-        - Local vector retrieval
-        - Retrieval-Augmented Generation
-        - Grounded technical Q&A
-
-        ### Architecture
-
-        **Support Ticket**
-        → **Gemini 2.5 Flash**
-        → **Pydantic Validation**
-        → **Structured Data**
-
-        **Technical Documentation**
-        → **Chunking**
-        → **MiniLM Embeddings**
-        → **ChromaDB**
-        → **Similarity Search**
-        → **Gemini**
-        → **Grounded Answer**
-        """
-    )
-
-    st.divider()
-
-    st.markdown("### 👨‍💻 Developer")
-
-    st.write("**Pramod Prakash Jadhav**")
-
-    st.write(
-        "AI/ML Developer | Security Analyst"
-    )
-
-    st.write(
-        "📧 pramodj551@gmail.com"
-    )
-
-    st.write(
-        "🔗 LinkedIn: "
-        "pramod-prakash-jadhav-42ba2281"
-    )
-
-    st.divider()
-
-    st.caption(
-        "Built with Python • Streamlit • Gemini • "
-        "Pydantic • Sentence Transformers • ChromaDB"
-    )
+            return
+
+        with st.spinner(
+            "Extracting structured ticket..."
+            
