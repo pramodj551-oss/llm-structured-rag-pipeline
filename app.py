@@ -847,4 +847,3 @@ with tab_extract:
         placeholder=(
             "Example: My payment was charged twice and "
             "I need an urgent refund."
- 
