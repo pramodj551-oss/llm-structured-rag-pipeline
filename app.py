@@ -1,24 +1,22 @@
+# app.py
 """
 Production-style Streamlit application
 LLM-Powered Structured Insight & RAG Retrieval Pipeline
 
-Features
---------
-1. Structured support-ticket extraction using Gemini + Pydantic
-2. RAG-based question answering using:
-   - Sentence Transformers
-   - ChromaDB
-   - Gemini
-3. Top-K retrieved chunks
-4. Similarity / relevance scores
-5. Grounded answer with source context
-6. Graceful error handling
+Features:
+- Structured Support Ticket Extraction
+- Pydantic Validation
+- RAG Retrieval
+- Top-K Retrieved Chunks
+- Similarity/Relevance Scores
+- RAG Sources
+- Grounded Answer
 """
 
 from __future__ import annotations
 
-import json
 import os
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -27,36 +25,106 @@ from dotenv import load_dotenv
 
 
 # ============================================================
-# APPLICATION CONFIGURATION
-# ============================================================
-
-load_dotenv()
-
-BASE_DIR = Path(__file__).resolve().parent
-
-DATA_DIR = BASE_DIR / "data"
-SRC_DIR = BASE_DIR / "src"
-
-TICKETS_FILE = DATA_DIR / "support_tickets.json"
-KNOWLEDGE_BASE_FILE = DATA_DIR / "knowledge_base.txt"
-
-APP_TITLE = "LLM-Powered Structured Insight & RAG"
-APP_ICON = "🧠"
-
-DEFAULT_TOP_K = 5
-MAX_TOP_K = 10
-
-
-# ============================================================
-# PAGE CONFIGURATION
+# PAGE CONFIG
 # ============================================================
 
 st.set_page_config(
-    page_title=APP_TITLE,
-    page_icon=APP_ICON,
+    page_title="LLM Structured Insight & RAG",
+    page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+
+# ============================================================
+# PATHS / ENVIRONMENT
+# ============================================================
+
+BASE_DIR = Path(__file__).resolve().parent
+
+load_dotenv(BASE_DIR / ".env")
+
+DATA_DIR = BASE_DIR / "data"
+KB_PATH = DATA_DIR / "knowledge_base.txt"
+
+
+# ============================================================
+# SAFE IMPORTS
+# ============================================================
+
+IMPORT_ERRORS: list[str] = []
+
+
+try:
+    from src.schemas import (
+        ExtractedSupportTicket,
+        UrgencyLevel,
+        TicketCategory,
+        SentimentLevel,
+    )
+except Exception as exc:
+    ExtractedSupportTicket = None
+    UrgencyLevel = None
+    TicketCategory = None
+    SentimentLevel = None
+
+    IMPORT_ERRORS.append(
+        f"schemas.py import failed: {exc}"
+    )
+
+
+try:
+    from src.extraction_pipeline import (
+        extract_ticket,
+    )
+except Exception as exc:
+    extract_ticket = None
+
+    IMPORT_ERRORS.append(
+        f"extraction_pipeline.py import failed: {exc}"
+    )
+
+
+try:
+    from src.rag_pipeline import (
+        initialize_rag,
+        retrieve_documents,
+        generate_grounded_answer,
+    )
+except Exception as exc:
+    initialize_rag = None
+    retrieve_documents = None
+    generate_grounded_answer = None
+
+    IMPORT_ERRORS.append(
+        f"rag_pipeline.py import failed: {exc}"
+    )
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+if "rag_initialized" not in st.session_state:
+    st.session_state.rag_initialized = False
+
+if "rag_collection" not in st.session_state:
+    st.session_state.rag_collection = None
+
+if "rag_embedder" not in st.session_state:
+    st.session_state.rag_embedder = None
+
+if "rag_chunks" not in st.session_state:
+    st.session_state.rag_chunks = []
+
+if "last_retrieval" not in st.session_state:
+    st.session_state.last_retrieval = []
+
+if "last_answer" not in st.session_state:
+    st.session_state.last_answer = None
+
+if "last_ticket" not in st.session_state:
+    st.session_state.last_ticket = None
 
 
 # ============================================================
@@ -66,45 +134,37 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-        .main-title {
-            font-size: 2.2rem;
-            font-weight: 700;
-            margin-bottom: 0.2rem;
-        }
+    .main-title {
+        font-size: 2.2rem;
+        font-weight: 700;
+        margin-bottom: 0.2rem;
+    }
 
-        .subtitle {
-            color: #6b7280;
-            font-size: 1rem;
-            margin-bottom: 1.5rem;
-        }
+    .subtitle {
+        color: #777;
+        font-size: 1rem;
+        margin-bottom: 1.5rem;
+    }
 
-        .source-card {
-            border: 1px solid #d1d5db;
-            border-radius: 10px;
-            padding: 1rem;
-            margin-bottom: 0.8rem;
-        }
+    .source-card {
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 12px;
+        background-color: rgba(128,128,128,0.05);
+    }
 
-        .score {
-            font-weight: 700;
-        }
+    .score {
+        font-weight: 700;
+    }
 
-        .grounded-answer {
-            border-left: 4px solid #2563eb;
-            padding: 1rem;
-            background: #f8fafc;
-            border-radius: 6px;
-        }
-
-        .status-success {
-            color: #15803d;
-            font-weight: 600;
-        }
-
-        .status-warning {
-            color: #b45309;
-            font-weight: 600;
-        }
+    .grounded-answer {
+        border-left: 4px solid #4CAF50;
+        padding: 12px 16px;
+        margin-top: 10px;
+        background-color: rgba(76,175,80,0.08);
+        border-radius: 5px;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -112,722 +172,593 @@ st.markdown(
 
 
 # ============================================================
-# HELPER FUNCTIONS
+# HEADER
 # ============================================================
 
-def get_api_key() -> str | None:
+st.markdown(
+    '<div class="main-title">🧠 LLM-Powered Structured Insight & RAG</div>',
+    unsafe_allow_html=True,
+)
+
+st.markdown(
     """
-    Retrieve Gemini API key.
-
-    Priority:
-    1. Streamlit secrets
-    2. Environment variable
-    """
-
-    # Streamlit Cloud / local secrets.toml
-    try:
-        key = st.secrets.get("GEMINI_API_KEY")
-        if key:
-            return str(key).strip()
-    except Exception:
-        pass
-
-    # Environment variable
-    key = os.getenv("GEMINI_API_KEY")
-
-    if key:
-        return key.strip()
-
-    # Backward-compatible environment variable
-    key = os.getenv("GOOGLE_API_KEY")
-
-    if key:
-        return key.strip()
-
-    return None
-
-
-def load_ticket_data() -> list[dict[str, Any]]:
-    """Load support-ticket records safely."""
-
-    if not TICKETS_FILE.exists():
-        return []
-
-    try:
-        with open(TICKETS_FILE, "r", encoding="utf-8") as file:
-            data = json.load(file)
-
-        if isinstance(data, list):
-            return data
-
-        return []
-
-    except Exception as exc:
-        st.error(f"Unable to load support tickets: {exc}")
-        return []
-
-
-def validate_project_structure() -> list[str]:
-    """Check important project files."""
-
-    missing = []
-
-    required_files = [
-        TICKETS_FILE,
-        KNOWLEDGE_BASE_FILE,
-        SRC_DIR / "__init__.py",
-        SRC_DIR / "schemas.py",
-        SRC_DIR / "extraction_pipeline.py",
-        SRC_DIR / "rag_pipeline.py",
-    ]
-
-    for file_path in required_files:
-        if not file_path.exists():
-            missing.append(str(file_path.relative_to(BASE_DIR)))
-
-    return missing
-
-
-# ============================================================
-# IMPORT PIPELINES
-# ============================================================
-
-@st.cache_resource(show_spinner=False)
-def load_pipelines():
-    """
-    Import application pipelines.
-
-    Expected functions:
-
-    extraction_pipeline.py
-        extract_ticket(...)
-
-    rag_pipeline.py
-        initialize_rag(...)
-        retrieve_context(...)
-        generate_grounded_answer(...)
-    """
-
-    try:
-        from src.extraction_pipeline import extract_ticket
-        from src.rag_pipeline import (
-            initialize_rag,
-            retrieve_context,
-            generate_grounded_answer,
-        )
-
-        return {
-            "extract_ticket": extract_ticket,
-            "initialize_rag": initialize_rag,
-            "retrieve_context": retrieve_context,
-            "generate_grounded_answer": generate_grounded_answer,
-        }
-
-    except Exception as exc:
-        raise RuntimeError(
-            f"Unable to load application pipelines: {exc}"
-        ) from exc
-
-
-# ============================================================
-# RAG INITIALIZATION
-# ============================================================
-
-@st.cache_resource(show_spinner="Loading embedding model and ChromaDB...")
-def initialize_rag_system(_initialize_rag):
-    """
-    Initialize RAG system once per Streamlit process.
-    """
-
-    try:
-        return _initialize_rag(
-            knowledge_base_path=str(KNOWLEDGE_BASE_FILE)
-        )
-
-    except TypeError:
-        # Fallback for simpler implementations
-        return _initialize_rag(str(KNOWLEDGE_BASE_FILE))
-
-    except Exception as exc:
-        raise RuntimeError(
-            f"Unable to initialize RAG system: {exc}"
-        ) from exc
-
-
-# ============================================================
-# RAG RETRIEVAL NORMALIZER
-# ============================================================
-
-def normalize_retrieved_chunks(results: Any) -> list[dict[str, Any]]:
-    """
-    Normalize different possible retrieval outputs.
-
-    Supported formats:
-
-    [
-        {
-            "text": "...",
-            "score": 0.91,
-            "source": "knowledge_base.txt"
-        }
-    ]
-
-    or Chroma-like results.
-    """
-
-    normalized: list[dict[str, Any]] = []
-
-    if results is None:
-        return normalized
-
-    # --------------------------------------------------------
-    # Already normalized list
-    # --------------------------------------------------------
-
-    if isinstance(results, list):
-
-        for index, item in enumerate(results):
-
-            if isinstance(item, dict):
-
-                text = (
-                    item.get("text")
-                    or item.get("document")
-                    or item.get("content")
-                    or ""
-                )
-
-                score = (
-                    item.get("score")
-                    or item.get("similarity")
-                    or item.get("relevance_score")
-                )
-
-                source = (
-                    item.get("source")
-                    or item.get("metadata", {}).get("source")
-                    or "knowledge_base.txt"
-                )
-
-                normalized.append(
-                    {
-                        "rank": index + 1,
-                        "text": str(text),
-                        "score": score,
-                        "source": source,
-                        "metadata": item.get("metadata", {}),
-                    }
-                )
-
-            else:
-                normalized.append(
-                    {
-                        "rank": index + 1,
-                        "text": str(item),
-                        "score": None,
-                        "source": "knowledge_base.txt",
-                        "metadata": {},
-                    }
-                )
-
-        return normalized
-
-    # --------------------------------------------------------
-    # Chroma-style result
-    # --------------------------------------------------------
-
-    if isinstance(results, dict):
-
-        documents = results.get("documents", [[]])
-        metadatas = results.get("metadatas", [[]])
-        distances = results.get("distances", [[]])
-
-        documents = documents[0] if documents else []
-        metadatas = metadatas[0] if metadatas else []
-        distances = distances[0] if distances else []
-
-        for index, document in enumerate(documents):
-
-            metadata = (
-                metadatas[index]
-                if index < len(metadatas)
-                else {}
-            )
-
-            distance = (
-                distances[index]
-                if index < len(distances)
-                else None
-            )
-
-            # Chroma distance is lower = more similar.
-            # Convert distance into an intuitive relevance score.
-            relevance = None
-
-            if distance is not None:
-                try:
-                    relevance = 1 / (1 + float(distance))
-                except (TypeError, ValueError):
-                    relevance = None
-
-            normalized.append(
-                {
-                    "rank": index + 1,
-                    "text": str(document),
-                    "score": relevance,
-                    "source": metadata.get(
-                        "source",
-                        "knowledge_base.txt",
-                    ),
-                    "metadata": metadata,
-                }
-            )
-
-        return normalized
-
-    return normalized
-
-
-# ============================================================
-# SCORE DISPLAY
-# ============================================================
-
-def format_score(score: Any) -> str:
-    """Format relevance score."""
-
-    if score is None:
-        return "N/A"
-
-    try:
-        return f"{float(score):.4f}"
-    except (TypeError, ValueError):
-        return str(score)
+    <div class="subtitle">
+    Pydantic-validated ticket extraction + local semantic retrieval +
+    grounded LLM answers
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # ============================================================
 # SIDEBAR
 # ============================================================
 
-def render_sidebar():
+with st.sidebar:
 
-    st.sidebar.title("🧠 RAG Control Panel")
+    st.header("⚙️ Configuration")
 
-    st.sidebar.markdown("---")
-
-    mode = st.sidebar.radio(
-        "Select Mode",
-        [
-            "🔎 RAG Q&A",
-            "🎫 Ticket Extraction",
-            "📊 System Status",
-        ],
-    )
-
-    st.sidebar.markdown("---")
-
-    st.sidebar.subheader("Retrieval Settings")
-
-    top_k = st.sidebar.slider(
-        "Top-K Documents",
+    top_k = st.slider(
+        "Top-K Retrieved Chunks",
         min_value=1,
-        max_value=MAX_TOP_K,
-        value=DEFAULT_TOP_K,
+        max_value=10,
+        value=5,
         step=1,
     )
 
-    st.sidebar.caption(
-        "Higher Top-K retrieves more context but may increase "
-        "prompt size."
+    st.divider()
+
+    st.subheader("🔐 API Configuration")
+
+    api_key_available = bool(
+        os.getenv("GOOGLE_API_KEY")
+        or os.getenv("GEMINI_API_KEY")
     )
 
-    st.sidebar.markdown("---")
-
-    api_key = get_api_key()
-
-    if api_key:
-        st.sidebar.success("Gemini API Key: Configured")
+    if api_key_available:
+        st.success("Google API key detected")
     else:
-        st.sidebar.error("Gemini API Key: Missing")
+        st.warning(
+            "Google API key not detected.\n\n"
+            "Add GOOGLE_API_KEY to your .env file."
+        )
 
-    st.sidebar.markdown("---")
+    st.divider()
 
-    st.sidebar.caption(
-        "Embedding Model\n"
-        "`all-MiniLM-L6-v2`"
-    )
+    st.subheader("📚 Knowledge Base")
 
-    st.sidebar.caption(
-        "Vector Database\n"
-        "`ChromaDB`"
-    )
+    if KB_PATH.exists():
+        kb_size = KB_PATH.stat().st_size
 
-    st.sidebar.caption(
-        "LLM\n"
-        "`Gemini`"
-    )
+        st.success("Knowledge base found")
 
-    return mode, top_k
+        st.caption(
+            f"File: {KB_PATH.name}"
+        )
+
+        st.caption(
+            f"Size: {kb_size:,} bytes"
+        )
+    else:
+        st.error(
+            "knowledge_base.txt not found"
+        )
+
+    st.divider()
+
+    if st.button(
+        "🔄 Initialize / Reload RAG",
+        use_container_width=True,
+    ):
+
+        if initialize_rag is None:
+            st.error(
+                "RAG pipeline could not be imported."
+            )
+        elif not KB_PATH.exists():
+            st.error(
+                "knowledge_base.txt not found."
+            )
+        else:
+
+            with st.spinner(
+                "Initializing embedding model and vector database..."
+            ):
+
+                try:
+
+                    result = initialize_rag(
+                        str(KB_PATH)
+                    )
+
+                    if isinstance(result, tuple):
+
+                        if len(result) >= 2:
+                            st.session_state.rag_collection = result[0]
+                            st.session_state.rag_embedder = result[1]
+
+                        if len(result) >= 3:
+                            st.session_state.rag_chunks = result[2]
+
+                    else:
+                        st.session_state.rag_collection = result
+
+                    st.session_state.rag_initialized = True
+
+                    st.success(
+                        "RAG initialized successfully."
+                    )
+
+                except Exception as exc:
+
+                    st.session_state.rag_initialized = False
+
+                    st.error(
+                        f"RAG initialization failed: {exc}"
+                    )
+
+                    with st.expander(
+                        "Technical details"
+                    ):
+                        st.code(
+                            traceback.format_exc()
+                        )
 
 
 # ============================================================
-# RAG Q&A PAGE
+# IMPORT STATUS
 # ============================================================
 
-def render_rag_page(pipelines, top_k: int):
+if IMPORT_ERRORS:
 
-    st.markdown(
-        '<div class="main-title">🔎 RAG Knowledge Assistant</div>',
-        unsafe_allow_html=True,
-    )
+    with st.expander(
+        "⚠️ Component Import Diagnostics"
+    ):
 
-    st.markdown(
-        '<div class="subtitle">'
-        "Ask questions about the internal technical knowledge base. "
-        "Answers are generated using retrieved source context."
-        "</div>",
-        unsafe_allow_html=True,
+        for error in IMPORT_ERRORS:
+            st.warning(error)
+
+
+# ============================================================
+# TABS
+# ============================================================
+
+tab_rag, tab_ticket, tab_status = st.tabs(
+    [
+        "🔎 RAG Assistant",
+        "🎫 Ticket Extraction",
+        "🩺 System Status",
+    ]
+)
+
+
+# ============================================================
+# RAG ASSISTANT
+# ============================================================
+
+with tab_rag:
+
+    st.header("🔎 Grounded RAG Assistant")
+
+    st.write(
+        """
+        Ask a question about the internal technical documentation.
+        The system retrieves the most relevant chunks and generates
+        an answer grounded in those sources.
+        """
     )
 
     query = st.text_area(
         "Enter your question",
         placeholder=(
-            "Example: How should a critical security incident "
-            "be escalated?"
+            "Example: What should I do if a user cannot log in?"
         ),
         height=120,
     )
 
-    col1, col2 = st.columns([1, 5])
+    col1, col2 = st.columns(
+        [1, 4]
+    )
 
     with col1:
+
         search_clicked = st.button(
-            "🔍 Search",
+            "🔍 Search & Answer",
             type="primary",
             use_container_width=True,
         )
 
-    if not search_clicked:
-        st.info(
-            "Enter a question and click Search to run the RAG pipeline."
-        )
-        return
+    with col2:
 
-    if not query.strip():
-        st.warning("Please enter a question.")
-        return
-
-    if not get_api_key():
-        st.error(
-            "Gemini API key is not configured. "
-            "Add GEMINI_API_KEY to Streamlit Secrets or environment variables."
-        )
-        return
-
-    # --------------------------------------------------------
-    # Initialize RAG
-    # --------------------------------------------------------
-
-    with st.spinner("Initializing RAG system..."):
-
-        try:
-            rag_system = initialize_rag_system(
-                pipelines["initialize_rag"]
+        if st.session_state.rag_initialized:
+            st.success(
+                "RAG system ready"
+            )
+        else:
+            st.info(
+                "Initialize RAG from the sidebar first."
             )
 
-        except Exception as exc:
-            st.error(str(exc))
-            return
+    if search_clicked:
 
-    # --------------------------------------------------------
-    # Retrieval
-    # --------------------------------------------------------
+        if not query.strip():
 
-    with st.spinner("Searching knowledge base..."):
-
-        try:
-            raw_results = pipelines["retrieve_context"](
-                rag_system,
-                query,
-                top_k=top_k,
+            st.warning(
+                "Please enter a question."
             )
 
-        except TypeError:
+        elif retrieve_documents is None:
 
-            try:
-                raw_results = pipelines["retrieve_context"](
-                    rag_system,
-                    query,
-                    top_k,
-                )
-
-            except Exception as exc:
-                st.error(
-                    f"RAG retrieval failed: {exc}"
-                )
-                return
-
-        except Exception as exc:
             st.error(
-                f"RAG retrieval failed: {exc}"
-            )
-            return
-
-    retrieved_chunks = normalize_retrieved_chunks(
-        raw_results
-    )
-
-    if not retrieved_chunks:
-        st.warning(
-            "No relevant documents were retrieved."
-        )
-        return
-
-    # --------------------------------------------------------
-    # Metrics
-    # --------------------------------------------------------
-
-    st.subheader("📊 Retrieval Summary")
-
-    metric1, metric2, metric3 = st.columns(3)
-
-    metric1.metric(
-        "Documents Retrieved",
-        len(retrieved_chunks),
-    )
-
-    valid_scores = [
-        item["score"]
-        for item in retrieved_chunks
-        if item["score"] is not None
-    ]
-
-    if valid_scores:
-        metric2.metric(
-            "Best Relevance",
-            f"{max(valid_scores):.4f}",
-        )
-
-        metric3.metric(
-            "Average Relevance",
-            f"{sum(valid_scores) / len(valid_scores):.4f}",
-        )
-
-    else:
-        metric2.metric(
-            "Best Relevance",
-            "N/A",
-        )
-
-        metric3.metric(
-            "Average Relevance",
-            "N/A",
-        )
-
-    # --------------------------------------------------------
-    # Retrieved Sources
-    # --------------------------------------------------------
-
-    st.markdown("---")
-
-    st.subheader(
-        f"📚 Top-{len(retrieved_chunks)} Retrieved Sources"
-    )
-
-    for item in retrieved_chunks:
-
-        rank = item["rank"]
-        score = item["score"]
-        source = item["source"]
-        text = item["text"]
-        metadata = item.get("metadata", {})
-
-        with st.expander(
-            f"#{rank} — {source} — Relevance: {format_score(score)}",
-            expanded=(rank == 1),
-        ):
-
-            source_col, score_col = st.columns(2)
-
-            with source_col:
-                st.markdown("**Source**")
-                st.code(str(source))
-
-            with score_col:
-                st.markdown("**Similarity / Relevance Score**")
-                st.code(format_score(score))
-
-            st.markdown("**Retrieved Chunk**")
-
-            st.markdown(
-                f"""
-                <div class="source-card">
-                    {text}
-                </div>
-                """,
-                unsafe_allow_html=True,
+                "retrieve_documents() could not be imported."
             )
 
-            if metadata:
-                st.markdown("**Metadata**")
-                st.json(metadata)
+        elif not st.session_state.rag_initialized:
 
-    # --------------------------------------------------------
-    # Build Context
-    # --------------------------------------------------------
+            st.error(
+                "Please initialize the RAG system first."
+            )
 
-    context_parts = []
+        else:
 
-    for item in retrieved_chunks:
+            with st.spinner(
+                "Retrieving relevant knowledge..."
+            ):
 
-        context_parts.append(
-            f"""
-SOURCE: {item['source']}
-RELEVANCE: {format_score(item['score'])}
+                try:
+
+                    retrieval_result = retrieve_documents(
+                        query=query,
+                        collection=st.session_state.rag_collection,
+                        embedder=st.session_state.rag_embedder,
+                        top_k=top_k,
+                    )
+
+                    st.session_state.last_retrieval = (
+                        retrieval_result
+                    )
+
+                except TypeError:
+
+                    # Compatibility fallback for simpler
+                    # retrieve_documents implementations.
+
+                    try:
+
+                        retrieval_result = retrieve_documents(
+                            query,
+                            st.session_state.rag_collection,
+                            st.session_state.rag_embedder,
+                            top_k,
+                        )
+
+                        st.session_state.last_retrieval = (
+                            retrieval_result
+                        )
+
+                    except Exception as exc:
+
+                        st.error(
+                            f"Retrieval failed: {exc}"
+                        )
+
+                        with st.expander(
+                            "Technical details"
+                        ):
+                            st.code(
+                                traceback.format_exc()
+                            )
+
+                        retrieval_result = None
+
+                except Exception as exc:
+
+                    st.error(
+                        f"Retrieval failed: {exc}"
+                    )
+
+                    with st.expander(
+                        "Technical details"
+                    ):
+                        st.code(
+                            traceback.format_exc()
+                        )
+
+                    retrieval_result = None
+
+
+            # ------------------------------------------------
+            # NORMALIZE RETRIEVAL RESULTS
+            # ------------------------------------------------
+
+            normalized_results: list[dict[str, Any]] = []
+
+            if retrieval_result:
+
+                if isinstance(
+                    retrieval_result,
+                    dict,
+                ):
+
+                    documents = retrieval_result.get(
+                        "documents",
+                        [],
+                    )
+
+                    metadatas = retrieval_result.get(
+                        "metadatas",
+                        [],
+                    )
+
+                    distances = retrieval_result.get(
+                        "distances",
+                        [],
+                    )
+
+                    if documents and isinstance(
+                        documents[0],
+                        list,
+                    ):
+                        documents = documents[0]
+
+                    if metadatas and isinstance(
+                        metadatas[0],
+                        list,
+                    ):
+                        metadatas = metadatas[0]
+
+                    if distances and isinstance(
+                        distances[0],
+                        list,
+                    ):
+                        distances = distances[0]
+
+                    for index, document in enumerate(
+                        documents
+                    ):
+
+                        metadata = (
+                            metadatas[index]
+                            if index < len(metadatas)
+                            else {}
+                        )
+
+                        distance = (
+                            distances[index]
+                            if index < len(distances)
+                            else None
+                        )
+
+                        normalized_results.append(
+                            {
+                                "rank": index + 1,
+                                "text": document,
+                                "metadata": metadata or {},
+                                "distance": distance,
+                            }
+                        )
+
+                elif isinstance(
+                    retrieval_result,
+                    list,
+                ):
+
+                    for index, item in enumerate(
+                        retrieval_result
+                    ):
+
+                        if isinstance(
+                            item,
+                            dict,
+                        ):
+
+                            normalized_results.append(
+                                {
+                                    "rank": index + 1,
+                                    "text": item.get(
+                                        "text",
+                                        item.get(
+                                            "document",
+                                            "",
+                                        ),
+                                    ),
+                                    "metadata": item.get(
+                                        "metadata",
+                                        {},
+                                    ),
+                                    "distance": item.get(
+                                        "distance",
+                                        item.get(
+                                            "score"
+                                        ),
+                                    ),
+                                }
+                            )
+
+                        else:
+
+                            normalized_results.append(
+                                {
+                                    "rank": index + 1,
+                                    "text": str(item),
+                                    "metadata": {},
+                                    "distance": None,
+                                }
+                            )
+
+
+            # ------------------------------------------------
+            # RETRIEVAL RESULTS
+            # ------------------------------------------------
+
+            if normalized_results:
+
+                st.session_state.last_retrieval = (
+                    normalized_results
+                )
+
+                st.subheader(
+                    "📚 Retrieved Context"
+                )
+
+                st.caption(
+                    f"Top {len(normalized_results)} "
+                    f"relevant chunks retrieved"
+                )
+
+                for result in normalized_results:
+
+                    rank = result["rank"]
+                    text = result["text"]
+                    metadata = result["metadata"]
+                    distance = result["distance"]
+
+                    if distance is not None:
+
+                        try:
+
+                            distance_value = float(
+                                distance
+                            )
+
+                            # ChromaDB commonly returns
+                            # distance where lower is better.
+                            relevance = (
+                                1.0
+                                / (
+                                    1.0
+                                    + distance_value
+                                )
+                            )
+
+                            score_text = (
+                                f"{relevance:.4f}"
+                            )
+
+                        except (
+                            ValueError,
+                            TypeError,
+                        ):
+
+                            score_text = str(
+                                distance
+                            )
+
+                    else:
+
+                        score_text = "N/A"
+
+                    source = (
+                        metadata.get(
+                            "source",
+                            metadata.get(
+                                "file",
+                                "knowledge_base.txt",
+                            ),
+                        )
+                    )
+
+                    with st.expander(
+                        f"#{rank} — "
+                        f"Source: {source} — "
+                        f"Relevance: {score_text}"
+                    ):
+
+                        st.markdown(
+                            f"""
+                            <div class="source-card">
+
+                            <b>Source:</b> {source}<br>
+
+                            <b>Chunk Rank:</b> {rank}<br>
+
+                            <b>Similarity/Relevance:</b>
+                            <span class="score">
+                            {score_text}
+                            </span>
+
+                            <hr>
+
+                            {text}
+
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+            else:
+
+                st.warning(
+                    "No relevant chunks were retrieved."
+                )
+
+
+            # ------------------------------------------------
+            # GROUNDED ANSWER
+            # ------------------------------------------------
+
+            if (
+                normalized_results
+                and generate_grounded_answer is not None
+            ):
+
+                context_parts = []
+
+                for item in normalized_results:
+
+                    source = item[
+                        "metadata"
+                    ].get(
+                        "source",
+                        "knowledge_base.txt",
+                    )
+
+                    context_parts.append(
+                        f"""
+SOURCE: {source}
 
 {item['text']}
 """
-        )
+                    )
 
-    context = "\n\n---\n\n".join(context_parts)
-
-    # --------------------------------------------------------
-    # Grounded Answer
-    # --------------------------------------------------------
-
-    st.markdown("---")
-
-    st.subheader("🤖 Grounded Answer")
-
-    with st.spinner(
-        "Generating grounded answer from retrieved context..."
-    ):
-
-        try:
-
-            answer = pipelines["generate_grounded_answer"](
-                query=query,
-                context=context,
-            )
-
-        except TypeError:
-
-            try:
-                answer = pipelines[
-                    "generate_grounded_answer"
-                ](
-                    query,
-                    context,
+                context = "\n\n".join(
+                    context_parts
                 )
 
-            except Exception as exc:
-                st.error(
-                    f"Answer generation failed: {exc}"
-                )
-                return
+                with st.spinner(
+                    "Generating grounded answer..."
+                ):
 
-        except Exception as exc:
-            st.error(
-                f"Answer generation failed: {exc}"
-            )
-            return
+                    try:
 
-    if isinstance(answer, dict):
-        answer_text = (
-            answer.get("answer")
-            or answer.get("response")
-            or answer.get("text")
-            or str(answer)
-        )
-    else:
-        answer_text = str(answer)
+                        answer = (
+                            generate_grounded_answer(
+                                query=query,
+                                context=context,
+                            )
+                        )
 
-    st.markdown(
-        f"""
-        <div class="grounded-answer">
-        {answer_text}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+                        st.session_state.last_answer = (
+                            answer
+                        )
 
-    # --------------------------------------------------------
-    # Grounding Information
-    # --------------------------------------------------------
+                    except TypeError:
 
-    st.markdown("---")
+                        try:
 
-    st.subheader("🔗 Answer Grounding")
+                            answer = (
+                                generate_grounded_answer(
+                                    query,
+                                    context,
+                                )
+                            )
 
-    st.success(
-        f"The answer was generated using "
-        f"{len(retrieved_chunks)} retrieved knowledge-base chunk(s)."
-    )
+                            st.session_state.last_answer = (
+                                answer
+                            )
 
-    source_names = list(
-        dict.fromkeys(
-            str(item["source"])
-            for item in retrieved_chunks
-        )
-    )
+                        except Exception as exc:
 
-    st.markdown("**Sources used:**")
-
-    for source in source_names:
-        st.markdown(f"- `{source}`")
-
-    st.caption(
-        "The assistant is instructed to ground responses in "
-        "retrieved internal documentation. Always verify critical "
-        "operational decisions against authoritative procedures."
-    )
-
-
-# ============================================================
-# TICKET EXTRACTION PAGE
-# ============================================================
-
-def render_extraction_page(pipelines):
-
-    st.markdown(
-        '<div class="main-title">'
-        "🎫 Structured Support Ticket Extraction"
-        "</div>",
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '<div class="subtitle">'
-        "Convert unstructured support tickets into "
-        "Pydantic-validated structured records."
-        "</div>",
-        unsafe_allow_html=True,
-    )
-
-    ticket_text = st.text_area(
-        "Support Ticket",
-        placeholder=(
-            "Example:\n"
-            "I was charged twice for my subscription and "
-            "need one of the charges refunded immediately."
-        ),
-        height=180,
-    )
-
-    if st.button(
-        "⚙️ Extract & Validate",
-        type="primary",
-    ):
-
-        if not ticket_text.strip():
-            st.warning("Please enter a support ticket.")
-            return
-
-        if not get_api_key():
-            st.error(
-                "Gemini API key is not configured."
-            )
-            return
-
-        with st.spinner(
-            "Extracting structured ticket..."
-            
+                            st.error(
+           
