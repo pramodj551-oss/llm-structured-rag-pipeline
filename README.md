@@ -54,6 +54,7 @@ llm-structured-rag-pipeline/
 │   ├── support_tickets.json     # 15+ uncleaned text records
 │   └── knowledge_base.txt       # 2,000+ word corpus for RAG
 ├── src/
+└── __init__.py
 │   ├── schemas.py                # Pydantic schema definitions
 │   ├── extraction_pipeline.py    # Structured LLM extraction + validation
 │   └── rag_pipeline.py           # Chunking, embedding, vector DB & Q&A
