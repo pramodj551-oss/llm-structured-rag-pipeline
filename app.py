@@ -1,32 +1,48 @@
-# app.py
-"""
-Production-style Streamlit application
-LLM-Powered Structured Insight & RAG Retrieval Pipeline
-
-Features:
-- Structured Support Ticket Extraction
-- Pydantic Validation
-- RAG Retrieval
-- Top-K Retrieved Chunks
-- Similarity/Relevance Scores
-- RAG Sources
-- Grounded Answer
-"""
-
-from __future__ import annotations
-
 import os
-import traceback
+import json
 from pathlib import Path
 from typing import Any
 
 import streamlit as st
 from dotenv import load_dotenv
+from pydantic import ValidationError
+
+# ---------------------------------------------------------------------
+# PATH / ENVIRONMENT
+# ---------------------------------------------------------------------
+
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
+
+# ---------------------------------------------------------------------
+# OPTIONAL IMPORTS
+# ---------------------------------------------------------------------
+
+try:
+    from src.schemas import ExtractedSupportTicket
+except ImportError as exc:
+    ExtractedSupportTicket = None
+    SCHEMA_IMPORT_ERROR = str(exc)
+
+try:
+    from google import genai
+except ImportError:
+    genai = None
+
+try:
+    import chromadb
+except ImportError:
+    chromadb = None
+
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:
+    SentenceTransformer = None
 
 
-# ============================================================
+# ---------------------------------------------------------------------
 # PAGE CONFIG
-# ============================================================
+# ---------------------------------------------------------------------
 
 st.set_page_config(
     page_title="LLM Structured Insight & RAG",
@@ -36,122 +52,30 @@ st.set_page_config(
 )
 
 
-# ============================================================
-# PATHS / ENVIRONMENT
-# ============================================================
-
-BASE_DIR = Path(__file__).resolve().parent
-
-load_dotenv(BASE_DIR / ".env")
-
-DATA_DIR = BASE_DIR / "data"
-KB_PATH = DATA_DIR / "knowledge_base.txt"
-
-
-# ============================================================
-# SAFE IMPORTS
-# ============================================================
-
-IMPORT_ERRORS: list[str] = []
-
-
-try:
-    from src.schemas import (
-        ExtractedSupportTicket,
-        UrgencyLevel,
-        TicketCategory,
-        SentimentLevel,
-    )
-except Exception as exc:
-    ExtractedSupportTicket = None
-    UrgencyLevel = None
-    TicketCategory = None
-    SentimentLevel = None
-
-    IMPORT_ERRORS.append(
-        f"schemas.py import failed: {exc}"
-    )
-
-
-try:
-    from src.extraction_pipeline import (
-        extract_ticket,
-    )
-except Exception as exc:
-    extract_ticket = None
-
-    IMPORT_ERRORS.append(
-        f"extraction_pipeline.py import failed: {exc}"
-    )
-
-
-try:
-    from src.rag_pipeline import (
-        initialize_rag,
-        retrieve_documents,
-        generate_grounded_answer,
-    )
-except Exception as exc:
-    initialize_rag = None
-    retrieve_documents = None
-    generate_grounded_answer = None
-
-    IMPORT_ERRORS.append(
-        f"rag_pipeline.py import failed: {exc}"
-    )
-
-
-# ============================================================
-# SESSION STATE
-# ============================================================
-
-if "rag_initialized" not in st.session_state:
-    st.session_state.rag_initialized = False
-
-if "rag_collection" not in st.session_state:
-    st.session_state.rag_collection = None
-
-if "rag_embedder" not in st.session_state:
-    st.session_state.rag_embedder = None
-
-if "rag_chunks" not in st.session_state:
-    st.session_state.rag_chunks = []
-
-if "last_retrieval" not in st.session_state:
-    st.session_state.last_retrieval = []
-
-if "last_answer" not in st.session_state:
-    st.session_state.last_answer = None
-
-if "last_ticket" not in st.session_state:
-    st.session_state.last_ticket = None
-
-
-# ============================================================
+# ---------------------------------------------------------------------
 # CUSTOM CSS
-# ============================================================
+# ---------------------------------------------------------------------
 
 st.markdown(
     """
     <style>
     .main-title {
-        font-size: 2.2rem;
+        font-size: 2.3rem;
         font-weight: 700;
         margin-bottom: 0.2rem;
     }
 
     .subtitle {
-        color: #777;
+        color: #6b7280;
         font-size: 1rem;
         margin-bottom: 1.5rem;
     }
 
     .source-card {
-        border: 1px solid #ddd;
+        padding: 1rem;
         border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 12px;
-        background-color: rgba(128,128,128,0.05);
+        border: 1px solid #ddd;
+        margin-bottom: 0.8rem;
     }
 
     .score {
@@ -159,11 +83,19 @@ st.markdown(
     }
 
     .grounded-answer {
-        border-left: 4px solid #4CAF50;
-        padding: 12px 16px;
-        margin-top: 10px;
-        background-color: rgba(76,175,80,0.08);
-        border-radius: 5px;
+        padding: 1.2rem;
+        border-radius: 10px;
+        border: 1px solid #ddd;
+    }
+
+    .status-ok {
+        color: #15803d;
+        font-weight: 600;
+    }
+
+    .status-error {
+        color: #b91c1c;
+        font-weight: 600;
     }
     </style>
     """,
@@ -171,9 +103,9 @@ st.markdown(
 )
 
 
-# ============================================================
+# ---------------------------------------------------------------------
 # HEADER
-# ============================================================
+# ---------------------------------------------------------------------
 
 st.markdown(
     '<div class="main-title">🧠 LLM-Powered Structured Insight & RAG</div>',
@@ -183,582 +115,736 @@ st.markdown(
 st.markdown(
     """
     <div class="subtitle">
-    Pydantic-validated ticket extraction + local semantic retrieval +
-    grounded LLM answers
+    Pydantic-validated structured extraction + local semantic retrieval +
+    grounded Gemini answers
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 
-# ============================================================
+# ---------------------------------------------------------------------
+# SESSION STATE
+# ---------------------------------------------------------------------
+
+if "rag_initialized" not in st.session_state:
+    st.session_state.rag_initialized = False
+
+if "rag_collection" not in st.session_state:
+    st.session_state.rag_collection = None
+
+if "embedding_model" not in st.session_state:
+    st.session_state.embedding_model = None
+
+if "gemini_client" not in st.session_state:
+    st.session_state.gemini_client = None
+
+if "last_results" not in st.session_state:
+    st.session_state.last_results = []
+
+if "last_answer" not in st.session_state:
+    st.session_state.last_answer = ""
+
+
+# ---------------------------------------------------------------------
+# HELPER FUNCTIONS
+# ---------------------------------------------------------------------
+
+def get_api_key() -> str | None:
+    """
+    Read Gemini API key from environment.
+    """
+
+    key = os.getenv("GOOGLE_API_KEY")
+
+    if key:
+        return key.strip()
+
+    return None
+
+
+def load_knowledge_base() -> str:
+    """
+    Load knowledge_base.txt.
+    """
+
+    kb_path = BASE_DIR / "data" / "knowledge_base.txt"
+
+    if not kb_path.exists():
+        raise FileNotFoundError(
+            f"Knowledge base not found: {kb_path}"
+        )
+
+    return kb_path.read_text(encoding="utf-8")
+
+
+def chunk_text(
+    text: str,
+    chunk_size: int = 800,
+    overlap: int = 120,
+) -> list[str]:
+    """
+    Split knowledge base into overlapping chunks.
+    """
+
+    if not text.strip():
+        return []
+
+    chunks = []
+
+    start = 0
+    text_length = len(text)
+
+    while start < text_length:
+        end = min(start + chunk_size, text_length)
+
+        chunk = text[start:end].strip()
+
+        if chunk:
+            chunks.append(chunk)
+
+        if end >= text_length:
+            break
+
+        start = max(end - overlap, start + 1)
+
+    return chunks
+
+
+def initialize_embeddings():
+    """
+    Load SentenceTransformer embedding model.
+    """
+
+    if SentenceTransformer is None:
+        raise ImportError(
+            "sentence-transformers is not installed."
+        )
+
+    if st.session_state.embedding_model is None:
+
+        st.session_state.embedding_model = SentenceTransformer(
+            "sentence-transformers/all-MiniLM-L6-v2"
+        )
+
+    return st.session_state.embedding_model
+
+
+def initialize_chroma(chunks: list[str]):
+    """
+    Create an in-memory ChromaDB collection.
+    """
+
+    if chromadb is None:
+        raise ImportError(
+            "chromadb is not installed."
+        )
+
+    embedder = initialize_embeddings()
+
+    embeddings = embedder.encode(
+        chunks,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+    )
+
+    client = chromadb.Client()
+
+    collection_name = "technical_knowledge_base"
+
+    # Recreate collection for clean application startup.
+    try:
+        client.delete_collection(collection_name)
+    except Exception:
+        pass
+
+    collection = client.create_collection(
+        name=collection_name
+    )
+
+    ids = [
+        f"chunk_{index}"
+        for index in range(len(chunks))
+    ]
+
+    collection.add(
+        ids=ids,
+        documents=chunks,
+        embeddings=embeddings.tolist(),
+    )
+
+    st.session_state.rag_collection = collection
+    st.session_state.rag_initialized = True
+
+    return collection
+
+
+def initialize_gemini():
+    """
+    Initialize Google GenAI client.
+    """
+
+    if genai is None:
+        raise ImportError(
+            "google-genai is not installed."
+        )
+
+    api_key = get_api_key()
+
+    if not api_key:
+        raise ValueError(
+            "GOOGLE_API_KEY is not configured."
+        )
+
+    if st.session_state.gemini_client is None:
+
+        st.session_state.gemini_client = genai.Client(
+            api_key=api_key
+        )
+
+    return st.session_state.gemini_client
+
+
+def calculate_similarity(distance: float) -> float:
+    """
+    Convert Chroma distance into a simple similarity score.
+
+    With normalized embeddings, cosine distance is generally:
+        distance = 1 - cosine_similarity
+
+    Therefore:
+        similarity = 1 - distance
+    """
+
+    try:
+        similarity = 1.0 - float(distance)
+    except (TypeError, ValueError):
+        return 0.0
+
+    return max(0.0, min(1.0, similarity))
+
+
+def retrieve_chunks(
+    query: str,
+    top_k: int,
+) -> list[dict[str, Any]]:
+    """
+    Retrieve top-K chunks from ChromaDB.
+    """
+
+    collection = st.session_state.rag_collection
+
+    if collection is None:
+        raise RuntimeError(
+            "RAG collection is not initialized."
+        )
+
+    embedder = initialize_embeddings()
+
+    query_embedding = embedder.encode(
+        [query],
+        normalize_embeddings=True,
+    )[0]
+
+    results = collection.query(
+        query_embeddings=[query_embedding.tolist()],
+        n_results=top_k,
+        include=[
+            "documents",
+            "distances",
+        ],
+    )
+
+    documents = results.get("documents", [[]])[0]
+    distances = results.get("distances", [[]])[0]
+
+    retrieved = []
+
+    for index, document in enumerate(documents):
+
+        distance = (
+            distances[index]
+            if index < len(distances)
+            else 1.0
+        )
+
+        similarity = calculate_similarity(distance)
+
+        retrieved.append(
+            {
+                "rank": index + 1,
+                "document": document,
+                "distance": distance,
+                "similarity": similarity,
+            }
+        )
+
+    return retrieved
+
+
+def generate_grounded_answer(
+    query: str,
+    retrieved_chunks: list[dict[str, Any]],
+) -> str:
+    """
+    Generate answer using only retrieved context.
+    """
+
+    client = initialize_gemini()
+
+    if not retrieved_chunks:
+        return (
+            "I could not retrieve relevant information "
+            "from the knowledge base."
+        )
+
+    context_parts = []
+
+    for item in retrieved_chunks:
+
+        context_parts.append(
+            f"""
+SOURCE {item['rank']}
+Similarity: {item['similarity']:.4f}
+
+{item['document']}
+"""
+        )
+
+    context = "\n\n".join(context_parts)
+
+    prompt = f"""
+You are a technical support knowledge assistant.
+
+Answer the user's question using ONLY the provided
+knowledge-base context.
+
+Rules:
+1. Do not invent information.
+2. Do not use outside knowledge.
+3. If the answer is not present in the context,
+   explicitly say that the knowledge base does not
+   contain enough information.
+4. Give a concise but useful answer.
+5. Mention relevant source numbers such as [Source 1]
+   or [Source 2].
+6. Prefer factual, grounded explanations.
+
+USER QUESTION:
+{query}
+
+KNOWLEDGE BASE CONTEXT:
+{context}
+
+GROUNDED ANSWER:
+"""
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+    )
+
+    if response is None:
+        return "No response was generated."
+
+    answer = getattr(response, "text", None)
+
+    if not answer:
+        return "The model returned an empty response."
+
+    return answer.strip()
+
+
+def extract_structured_ticket(ticket_text: str):
+    """
+    Extract a support ticket using Gemini and validate
+    the result with Pydantic.
+
+    Uses JSON mode through Gemini's response_mime_type.
+    """
+
+    client = initialize_gemini()
+
+    if ExtractedSupportTicket is None:
+        raise ImportError(
+            f"Unable to import src.schemas: "
+            f"{SCHEMA_IMPORT_ERROR}"
+        )
+
+    schema = ExtractedSupportTicket.model_json_schema()
+
+    prompt = f"""
+Extract the support ticket information from the text below.
+
+Return ONLY valid JSON matching this schema.
+
+SCHEMA:
+{json.dumps(schema, indent=2)}
+
+TICKET:
+{ticket_text}
+"""
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config={
+            "response_mime_type": "application/json",
+        },
+    )
+
+    raw_text = getattr(response, "text", "")
+
+    if not raw_text:
+        raise ValueError(
+            "Gemini returned an empty extraction response."
+        )
+
+    parsed = json.loads(raw_text)
+
+    validated = ExtractedSupportTicket.model_validate(
+        parsed
+    )
+
+    return validated
+
+
+# ---------------------------------------------------------------------
 # SIDEBAR
-# ============================================================
+# ---------------------------------------------------------------------
 
 with st.sidebar:
 
-    st.header("⚙️ Configuration")
+    st.header("⚙️ RAG Configuration")
 
     top_k = st.slider(
         "Top-K Retrieved Chunks",
         min_value=1,
         max_value=10,
-        value=5,
+        value=4,
         step=1,
     )
 
     st.divider()
 
-    st.subheader("🔐 API Configuration")
+    st.subheader("System Status")
 
-    api_key_available = bool(
-        os.getenv("GOOGLE_API_KEY")
-        or os.getenv("GEMINI_API_KEY")
-    )
+    api_key_exists = bool(get_api_key())
 
-    if api_key_available:
-        st.success("Google API key detected")
-    else:
-        st.warning(
-            "Google API key not detected.\n\n"
-            "Add GOOGLE_API_KEY to your .env file."
-        )
-
-    st.divider()
-
-    st.subheader("📚 Knowledge Base")
-
-    if KB_PATH.exists():
-        kb_size = KB_PATH.stat().st_size
-
-        st.success("Knowledge base found")
-
-        st.caption(
-            f"File: {KB_PATH.name}"
-        )
-
-        st.caption(
-            f"Size: {kb_size:,} bytes"
+    if api_key_exists:
+        st.markdown(
+            '<span class="status-ok">✓ Gemini API key detected</span>',
+            unsafe_allow_html=True,
         )
     else:
-        st.error(
-            "knowledge_base.txt not found"
+        st.markdown(
+            '<span class="status-error">✗ Gemini API key missing</span>',
+            unsafe_allow_html=True,
+        )
+
+    if st.session_state.rag_initialized:
+        st.markdown(
+            '<span class="status-ok">✓ RAG initialized</span>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "○ RAG not initialized",
+            unsafe_allow_html=True,
         )
 
     st.divider()
 
     if st.button(
-        "🔄 Initialize / Reload RAG",
+        "🔄 Initialize / Rebuild RAG",
         use_container_width=True,
     ):
 
-        if initialize_rag is None:
-            st.error(
-                "RAG pipeline could not be imported."
-            )
-        elif not KB_PATH.exists():
-            st.error(
-                "knowledge_base.txt not found."
-            )
-        else:
+        try:
 
             with st.spinner(
-                "Initializing embedding model and vector database..."
+                "Loading knowledge base and building vector index..."
             ):
 
-                try:
+                kb_text = load_knowledge_base()
 
-                    result = initialize_rag(
-                        str(KB_PATH)
+                chunks = chunk_text(kb_text)
+
+                if not chunks:
+                    raise ValueError(
+                        "Knowledge base contains no usable text."
                     )
 
-                    if isinstance(result, tuple):
+                initialize_chroma(chunks)
 
-                        if len(result) >= 2:
-                            st.session_state.rag_collection = result[0]
-                            st.session_state.rag_embedder = result[1]
+            st.success(
+                f"RAG initialized successfully with "
+                f"{len(chunks)} chunks."
+            )
 
-                        if len(result) >= 3:
-                            st.session_state.rag_chunks = result[2]
+        except Exception as exc:
 
-                    else:
-                        st.session_state.rag_collection = result
+            st.error(
+                f"RAG initialization failed: {exc}"
+            )
 
-                    st.session_state.rag_initialized = True
+    st.divider()
 
-                    st.success(
-                        "RAG initialized successfully."
-                    )
+    st.caption(
+        "Embedding: all-MiniLM-L6-v2"
+    )
 
-                except Exception as exc:
+    st.caption(
+        "Vector DB: ChromaDB"
+    )
 
-                    st.session_state.rag_initialized = False
-
-                    st.error(
-                        f"RAG initialization failed: {exc}"
-                    )
-
-                    with st.expander(
-                        "Technical details"
-                    ):
-                        st.code(
-                            traceback.format_exc()
-                        )
+    st.caption(
+        "LLM: Gemini 2.5 Flash"
+    )
 
 
-# ============================================================
-# IMPORT STATUS
-# ============================================================
+# ---------------------------------------------------------------------
+# MAIN TABS
+# ---------------------------------------------------------------------
 
-if IMPORT_ERRORS:
-
-    with st.expander(
-        "⚠️ Component Import Diagnostics"
-    ):
-
-        for error in IMPORT_ERRORS:
-            st.warning(error)
-
-
-# ============================================================
-# TABS
-# ============================================================
-
-tab_rag, tab_ticket, tab_status = st.tabs(
+tab_rag, tab_extract, tab_validation, tab_about = st.tabs(
     [
-        "🔎 RAG Assistant",
-        "🎫 Ticket Extraction",
-        "🩺 System Status",
+        "🔎 RAG Search",
+        "🧠 Structured Extraction",
+        "🛡️ Validation Demo",
+        "ℹ️ About",
     ]
 )
 
 
-# ============================================================
-# RAG ASSISTANT
-# ============================================================
+# =====================================================================
+# RAG SEARCH
+# =====================================================================
 
 with tab_rag:
 
-    st.header("🔎 Grounded RAG Assistant")
+    st.header("🔎 Retrieval-Augmented Generation")
 
     st.write(
-        """
-        Ask a question about the internal technical documentation.
-        The system retrieves the most relevant chunks and generates
-        an answer grounded in those sources.
-        """
+        "Ask a question about the internal technical "
+        "knowledge base."
     )
 
     query = st.text_area(
         "Enter your question",
         placeholder=(
-            "Example: What should I do if a user cannot log in?"
+            "Example: What should I do if the application "
+            "cannot connect to the database?"
         ),
         height=120,
     )
 
-    col1, col2 = st.columns(
-        [1, 4]
+    run_rag = st.button(
+        "🚀 Run RAG",
+        type="primary",
+        use_container_width=True,
     )
 
-    with col1:
-
-        search_clicked = st.button(
-            "🔍 Search & Answer",
-            type="primary",
-            use_container_width=True,
-        )
-
-    with col2:
-
-        if st.session_state.rag_initialized:
-            st.success(
-                "RAG system ready"
-            )
-        else:
-            st.info(
-                "Initialize RAG from the sidebar first."
-            )
-
-    if search_clicked:
+    if run_rag:
 
         if not query.strip():
 
             st.warning(
-                "Please enter a question."
-            )
-
-        elif retrieve_documents is None:
-
-            st.error(
-                "retrieve_documents() could not be imported."
+                "Please enter a question first."
             )
 
         elif not st.session_state.rag_initialized:
 
             st.error(
-                "Please initialize the RAG system first."
+                "RAG is not initialized. "
+                "Click 'Initialize / Rebuild RAG' "
+                "from the sidebar first."
+            )
+
+        elif not get_api_key():
+
+            st.error(
+                "GOOGLE_API_KEY is missing. "
+                "Configure it in your environment or .env file."
             )
 
         else:
 
-            with st.spinner(
-                "Retrieving relevant knowledge..."
-            ):
+            try:
 
-                try:
+                with st.spinner(
+                    "Retrieving relevant knowledge..."
+                ):
 
-                    retrieval_result = retrieve_documents(
+                    retrieved = retrieve_chunks(
                         query=query,
-                        collection=st.session_state.rag_collection,
-                        embedder=st.session_state.rag_embedder,
                         top_k=top_k,
                     )
 
-                    st.session_state.last_retrieval = (
-                        retrieval_result
+                st.session_state.last_results = retrieved
+
+                if not retrieved:
+
+                    st.warning(
+                        "No relevant chunks were retrieved."
                     )
 
-                except TypeError:
+                else:
 
-                    # Compatibility fallback for simpler
-                    # retrieve_documents implementations.
+                    st.success(
+                        f"Retrieved {len(retrieved)} relevant chunks."
+                    )
 
-                    try:
+                    # -------------------------------------------------
+                    # RETRIEVAL METRICS
+                    # -------------------------------------------------
 
-                        retrieval_result = retrieve_documents(
-                            query,
-                            st.session_state.rag_collection,
-                            st.session_state.rag_embedder,
-                            top_k,
+                    best_score = retrieved[0]["similarity"]
+
+                    avg_score = sum(
+                        item["similarity"]
+                        for item in retrieved
+                    ) / len(retrieved)
+
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+                        st.metric(
+                            "Chunks Retrieved",
+                            len(retrieved),
                         )
 
-                        st.session_state.last_retrieval = (
-                            retrieval_result
+                    with col2:
+                        st.metric(
+                            "Best Similarity",
+                            f"{best_score:.3f}",
                         )
 
-                    except Exception as exc:
+                    with col3:
+                        st.metric(
+                            "Average Similarity",
+                            f"{avg_score:.3f}",
+                        )
 
-                        st.error(
-                            f"Retrieval failed: {exc}"
+                    st.divider()
+
+                    # -------------------------------------------------
+                    # TOP-K SOURCES
+                    # -------------------------------------------------
+
+                    st.subheader(
+                        "📚 RAG Sources / Top-K Retrieved Chunks"
+                    )
+
+                    for item in retrieved:
+
+                        similarity_pct = (
+                            item["similarity"] * 100
                         )
 
                         with st.expander(
-                            "Technical details"
-                        ):
-                            st.code(
-                                traceback.format_exc()
-                            )
-
-                        retrieval_result = None
-
-                except Exception as exc:
-
-                    st.error(
-                        f"Retrieval failed: {exc}"
-                    )
-
-                    with st.expander(
-                        "Technical details"
-                    ):
-                        st.code(
-                            traceback.format_exc()
-                        )
-
-                    retrieval_result = None
-
-
-            # ------------------------------------------------
-            # NORMALIZE RETRIEVAL RESULTS
-            # ------------------------------------------------
-
-            normalized_results: list[dict[str, Any]] = []
-
-            if retrieval_result:
-
-                if isinstance(
-                    retrieval_result,
-                    dict,
-                ):
-
-                    documents = retrieval_result.get(
-                        "documents",
-                        [],
-                    )
-
-                    metadatas = retrieval_result.get(
-                        "metadatas",
-                        [],
-                    )
-
-                    distances = retrieval_result.get(
-                        "distances",
-                        [],
-                    )
-
-                    if documents and isinstance(
-                        documents[0],
-                        list,
-                    ):
-                        documents = documents[0]
-
-                    if metadatas and isinstance(
-                        metadatas[0],
-                        list,
-                    ):
-                        metadatas = metadatas[0]
-
-                    if distances and isinstance(
-                        distances[0],
-                        list,
-                    ):
-                        distances = distances[0]
-
-                    for index, document in enumerate(
-                        documents
-                    ):
-
-                        metadata = (
-                            metadatas[index]
-                            if index < len(metadatas)
-                            else {}
-                        )
-
-                        distance = (
-                            distances[index]
-                            if index < len(distances)
-                            else None
-                        )
-
-                        normalized_results.append(
-                            {
-                                "rank": index + 1,
-                                "text": document,
-                                "metadata": metadata or {},
-                                "distance": distance,
-                            }
-                        )
-
-                elif isinstance(
-                    retrieval_result,
-                    list,
-                ):
-
-                    for index, item in enumerate(
-                        retrieval_result
-                    ):
-
-                        if isinstance(
-                            item,
-                            dict,
-                        ):
-
-                            normalized_results.append(
-                                {
-                                    "rank": index + 1,
-                                    "text": item.get(
-                                        "text",
-                                        item.get(
-                                            "document",
-                                            "",
-                                        ),
-                                    ),
-                                    "metadata": item.get(
-                                        "metadata",
-                                        {},
-                                    ),
-                                    "distance": item.get(
-                                        "distance",
-                                        item.get(
-                                            "score"
-                                        ),
-                                    ),
-                                }
-                            )
-
-                        else:
-
-                            normalized_results.append(
-                                {
-                                    "rank": index + 1,
-                                    "text": str(item),
-                                    "metadata": {},
-                                    "distance": None,
-                                }
-                            )
-
-
-            # ------------------------------------------------
-            # RETRIEVAL RESULTS
-            # ------------------------------------------------
-
-            if normalized_results:
-
-                st.session_state.last_retrieval = (
-                    normalized_results
-                )
-
-                st.subheader(
-                    "📚 Retrieved Context"
-                )
-
-                st.caption(
-                    f"Top {len(normalized_results)} "
-                    f"relevant chunks retrieved"
-                )
-
-                for result in normalized_results:
-
-                    rank = result["rank"]
-                    text = result["text"]
-                    metadata = result["metadata"]
-                    distance = result["distance"]
-
-                    if distance is not None:
-
-                        try:
-
-                            distance_value = float(
-                                distance
-                            )
-
-                            # ChromaDB commonly returns
-                            # distance where lower is better.
-                            relevance = (
-                                1.0
-                                / (
-                                    1.0
-                                    + distance_value
-                                )
-                            )
-
-                            score_text = (
-                                f"{relevance:.4f}"
-                            )
-
-                        except (
-                            ValueError,
-                            TypeError,
-                        ):
-
-                            score_text = str(
-                                distance
-                            )
-
-                    else:
-
-                        score_text = "N/A"
-
-                    source = (
-                        metadata.get(
-                            "source",
-                            metadata.get(
-                                "file",
-                                "knowledge_base.txt",
+                            f"Source {item['rank']}  |  "
+                            f"Similarity: {item['similarity']:.4f} "
+                            f"({similarity_pct:.1f}%)",
+                            expanded=(
+                                item["rank"] == 1
                             ),
-                        )
-                    )
+                        ):
 
-                    with st.expander(
-                        f"#{rank} — "
-                        f"Source: {source} — "
-                        f"Relevance: {score_text}"
-                    ):
-
-                        st.markdown(
-                            f"""
-                            <div class="source-card">
-
-                            <b>Source:</b> {source}<br>
-
-                            <b>Chunk Rank:</b> {rank}<br>
-
-                            <b>Similarity/Relevance:</b>
-                            <span class="score">
-                            {score_text}
-                            </span>
-
-                            <hr>
-
-                            {text}
-
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-
-            else:
-
-                st.warning(
-                    "No relevant chunks were retrieved."
-                )
-
-
-            # ------------------------------------------------
-            # GROUNDED ANSWER
-            # ------------------------------------------------
-
-            if (
-                normalized_results
-                and generate_grounded_answer is not None
-            ):
-
-                context_parts = []
-
-                for item in normalized_results:
-
-                    source = item[
-                        "metadata"
-                    ].get(
-                        "source",
-                        "knowledge_base.txt",
-                    )
-
-                    context_parts.append(
-                        f"""
-SOURCE: {source}
-
-{item['text']}
-"""
-                    )
-
-                context = "\n\n".join(
-                    context_parts
-                )
-
-                with st.spinner(
-                    "Generating grounded answer..."
-                ):
-
-                    try:
-
-                        answer = (
-                            generate_grounded_answer(
-                                query=query,
-                                context=context,
+                            st.markdown(
+                                f"""
+                                **Rank:** {item['rank']}  
+                                **Similarity Score:** {item['similarity']:.4f}  
+                                **Distance:** {item['distance']:.4f}
+                                """
                             )
-                        )
 
-                        st.session_state.last_answer = (
-                            answer
-                        )
-
-                    except TypeError:
-
-                        try:
-
-                            answer = (
-                                generate_grounded_answer(
-                                    query,
-                                    context,
+                            st.progress(
+                                max(
+                                    0.0,
+                                    min(
+                                        1.0,
+                                        item["similarity"],
+                                    ),
                                 )
                             )
 
-                            st.session_state.last_answer = (
-                                answer
+                            st.markdown(
+                                "**Retrieved Chunk:**"
                             )
 
-                        except Exception as exc:
+                            st.code(
+                                item["document"],
+                                language="text",
+                            )
 
-                            st.error(
-           
+                    st.divider()
+
+                    # -------------------------------------------------
+                    # GROUNDED ANSWER
+                    # -------------------------------------------------
+
+                    with st.spinner(
+                        "Generating grounded answer..."
+                    ):
+
+                        answer = generate_grounded_answer(
+                            query=query,
+                            retrieved_chunks=retrieved,
+                        )
+
+                    st.session_state.last_answer = answer
+
+                    st.subheader(
+                        "🎯 Grounded Answer"
+                    )
+
+                    st.markdown(
+                        '<div class="grounded-answer">',
+                        unsafe_allow_html=True,
+                    )
+
+                    st.markdown(answer)
+
+                    st.markdown(
+                        "</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                    st.caption(
+                        "Answer generated using retrieved "
+                        "knowledge-base context only."
+                    )
+
+            except Exception as exc:
+
+                st.error(
+                    f"RAG execution failed: {exc}"
+                )
+
+                with st.expander(
+                    "Technical error details"
+                ):
+
+                    st.exception(exc)
+
+
+# =====================================================================
+# STRUCTURED EXTRACTION
+# =====================================================================
+
+with tab_extract:
+
+    st.header("🧠 Structured Support Ticket Extraction")
+
+    st.write(
+        "Convert an unstructured support ticket into a "
+        "Pydantic-validated structured object."
+    )
+
+    ticket_text = st.text_area(
+        "Support Ticket",
+        placeholder=(
+            "Example: My payment was charged twice and "
+            "I need an urgent refund."
+ 
